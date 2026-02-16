@@ -554,6 +554,15 @@ export default function EntityForge() {
     return "API error";
   };
 
+  const normalizeLlmError = (err) => {
+    const message = err?.message || "API error";
+    if (message.includes("JSON parse error")) return message;
+    if (message === "Invalid API response") return "JSON parse error in API response";
+    if (message === "Network error") return "Network error";
+    if (message === "Invalid API key" || message === "Rate limited" || message === "API error") return message;
+    return message;
+  };
+
   const buildOpenAIPrompt = (system, user) => [
     { role: "system", content: system },
     { role: "user", content: user },
@@ -589,25 +598,39 @@ export default function EntityForge() {
     const apiKey = getActiveApiKey();
     if (!apiKey) throw new Error("API key required. Click ⚙️ to configure.");
 
+    const parseApiJson = async (resp) => {
+      try {
+        return await resp.json();
+      } catch (err) {
+        if (err instanceof SyntaxError) throw new Error("Invalid API response");
+        throw err;
+      }
+    };
+
     if (provider === "anthropic") {
       const anthropicModel = ANTHROPIC_MODELS.includes(model) ? model : ANTHROPIC_MODELS[0];
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({
-          model: anthropicModel,
-          max_tokens: maxTokens,
-          system,
-          messages: messages || [{ role: "user", content: user }],
-        }),
-      });
+      let resp;
+      try {
+        resp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: JSON.stringify({
+            model: anthropicModel,
+            max_tokens: maxTokens,
+            system,
+            messages: messages || [{ role: "user", content: user }],
+          }),
+        });
+      } catch {
+        throw new Error("Network error");
+      }
       if (!resp.ok) throw new Error(mapApiError(resp.status));
-      return { provider, data: await resp.json() };
+      return { provider, data: await parseApiJson(resp) };
     }
 
     const openaiModel = OPENAI_MODELS.includes(model) ? model : OPENAI_MODELS[0];
@@ -618,16 +641,21 @@ export default function EntityForge() {
     if (openaiModel.startsWith("o1")) payload.max_completion_tokens = maxTokens;
     else payload.max_tokens = maxTokens;
 
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
-    });
+    let resp;
+    try {
+      resp = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      throw new Error("Network error");
+    }
     if (!resp.ok) throw new Error(mapApiError(resp.status));
-    return { provider, data: await resp.json() };
+    return { provider, data: await parseApiJson(resp) };
   };
 
   const getNodeDirective = (node, plan) => {
@@ -710,7 +738,7 @@ Respond with ONLY the JSON object.`;
           // Auto-roll
           const res = resolveRollTable(parsed);
           setRollResults((p) => ({ ...p, [nodeId]: res }));
-        } catch (err) { setError(`Roll table generation failed: ${err.message}`); }
+        } catch (err) { setError(`Roll table generation failed: ${normalizeLlmError(err)}`); }
         finally { setGenerating(false); setGeneratingNodeId(null); }
       }
       return;
@@ -737,7 +765,7 @@ Respond with ONLY the JSON object.`;
       const text = extractLlmText(data, provider);
       const parsed = parseJsonWithExcerpt(text);
       setNodes((p) => p.map((n) => n.id === nodeId ? { ...n, result: parsed } : n));
-    } catch (err) { setError(`Generation failed: ${err.message}`); }
+    } catch (err) { setError(`Generation failed: ${normalizeLlmError(err)}`); }
     finally { setGenerating(false); setGeneratingNodeId(null); }
   };
 
@@ -775,7 +803,7 @@ Respond with ONLY the JSON object.`;
         const plan = parseJsonWithExcerpt(text);
         setOrchPlan(plan);
         activeOrchPlan = plan;
-      } catch (err) { setError("Orchestration plan failed, falling back to sequential generation."); }
+      } catch (err) { setError(`Orchestration plan failed (${normalizeLlmError(err)}), falling back to sequential generation.`); }
       setGenerating(false);
     }
 
@@ -834,7 +862,11 @@ Respond with ONLY the JSON object.`;
       });
       const text = extractLlmText(data, provider);
       setOrchChat((p) => [...p, { role: "assistant", content: text || "..." }]);
-    } catch { setOrchChat((p) => [...p, { role: "assistant", content: "Connection error. Try again." }]); }
+    } catch (err) {
+      const msg = normalizeLlmError(err);
+      setError(`Orchestrator chat failed: ${msg}`);
+      setOrchChat((p) => [...p, { role: "assistant", content: `Error: ${msg}` }]);
+    }
   };
 
   // ── Persistence ──

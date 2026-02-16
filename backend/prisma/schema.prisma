@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EntityType {
+  creature
+  encounter
+  dungeon
+  location
+  trap
+  faction
+  loot
+  roll_table
+}
+
+enum EmbeddingQueueStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+enum ChatRole {
+  user
+  assistant
+}
+
+model User {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ownedWorkspaces  Workspace[]     @relation("WorkspaceOwner")
+  createdEntities  Entity[]        @relation("EntityCreator")
+  createdWorkflows Workflow[]      @relation("WorkflowCreator")
+  entityVersions   EntityVersion[] @relation("EntityVersionCreator")
+
+  @@map("users")
+}
+
+model Workspace {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ownerId   String   @map("owner_id") @db.Uuid
+  name      String
+  isPublic  Boolean  @default(false) @map("is_public")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  owner        User          @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  entities     Entity[]
+  workflows    Workflow[]
+  chatMessages ChatMessage[]
+
+  @@index([ownerId], map: "idx_workspaces_owner")
+  @@map("workspaces")
+}
+
+model Entity {
+  id          String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String                    @map("workspace_id") @db.Uuid
+  type        EntityType
+  name        String?
+  data        Json
+  embedding   Unsupported("vector(1536)")?
+  createdAt   DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy   String?                   @map("created_by") @db.Uuid
+
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator        User?           @relation("EntityCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  versions       EntityVersion[]
+  embeddingQueue EmbeddingQueue[]
+
+  @@index([workspaceId], map: "idx_entities_workspace")
+  @@index([type], map: "idx_entities_type")
+  @@map("entities")
+}
+
+model Workflow {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  name        String
+  data        Json
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy   String?  @map("created_by") @db.Uuid
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User?     @relation("WorkflowCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId], map: "idx_workflows_workspace")
+  @@map("workflows")
+}
+
+model EntityVersion {
+  id        String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityId  String                    @map("entity_id") @db.Uuid
+  version   Int
+  data      Json
+  embedding Unsupported("vector(1536)")?
+  createdAt DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String?                   @map("created_by") @db.Uuid
+
+  entity  Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  creator User?  @relation("EntityVersionCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@unique([entityId, version])
+  @@index([entityId], map: "idx_entity_versions_entity")
+  @@map("entity_versions")
+}
+
+model EmbeddingQueue {
+  id        String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityId  String               @map("entity_id") @db.Uuid
+  status    EmbeddingQueueStatus @default(pending)
+  attempts  Int                  @default(0)
+  lastError String?              @map("last_error")
+  createdAt DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  entity Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@index([status], map: "idx_embedding_queue_status")
+  @@index([createdAt], map: "idx_embedding_queue_created_at")
+  @@map("embedding_queue")
+}
+
+model ChatMessage {
+  id          String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String                    @map("workspace_id") @db.Uuid
+  role        ChatRole
+  content     String
+  embedding   Unsupported("vector(1536)")?
+  metadata    Json                      @default("{}")
+  createdAt   DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId], map: "idx_chat_messages_workspace")
+  @@index([createdAt], map: "idx_chat_messages_created_at")
+  @@map("chat_messages")
+}
+
+// NOTE: The PRD also requires PostgreSQL-specific indexes and triggers that Prisma schema
+// cannot model directly. Add these in a SQL migration when DATABASE_URL is available:
+// - GIN full-text index on entities.name (to_tsvector)
+// - GIN index on entities.data (jsonb)
+// - IVFFlat index on entities.embedding vector_cosine_ops
+// - IVFFlat index on chat_messages.embedding vector_cosine_ops
+// - Trigger function update_updated_at() + triggers for entities/workflows
+// - Trigger function extract_entity_name() + trigger for entities
