@@ -38,7 +38,14 @@ const SRD_RULESET = {
     conditions: ["blinded", "charmed", "deafened", "exhaustion", "frightened", "grappled", "incapacitated", "invisible", "paralyzed", "petrified", "poisoned", "prone", "restrained", "stunned", "unconscious"],
     skills: ["Acrobatics", "Animal Handling", "Arcana", "Athletics", "Deception", "History", "Insight", "Intimidation", "Investigation", "Medicine", "Nature", "Perception", "Performance", "Persuasion", "Religion", "Sleight of Hand", "Stealth", "Survival"],
     abilities: ["str", "dex", "con", "int", "wis", "cha"],
-    cr_xp: { "0": 10, "1/8": 25, "1/4": 50, "1/2": 100, "1": 200, "2": 450, "3": 700, "4": 1100, "5": 1800, "6": 2300, "7": 2900, "8": 3900, "9": 5000, "10": 5900 },
+    hit_dice_by_size: { Tiny: "d4", Small: "d6", Medium: "d8", Large: "d10", Huge: "d12", Gargantuan: "d20" },
+    cr_xp: {
+      "0": 10, "1/8": 25, "1/4": 50, "1/2": 100, "1": 200, "2": 450, "3": 700, "4": 1100, "5": 1800,
+      "6": 2300, "7": 2900, "8": 3900, "9": 5000, "10": 5900, "11": 7200, "12": 8400, "13": 10000,
+      "14": 11500, "15": 13000, "16": 15000, "17": 18000, "18": 20000, "19": 22000, "20": 25000,
+      "21": 33000, "22": 41000, "23": 50000, "24": 62000, "25": 75000, "26": 90000, "27": 105000,
+      "28": 120000, "29": 135000, "30": 155000
+    },
     item_rarities: ["common", "uncommon", "rare", "very_rare", "legendary", "artifact"],
     item_categories: ["weapon", "armor", "potion", "ring", "rod", "scroll", "staff", "wand", "wondrous", "mundane"],
   },
@@ -55,7 +62,7 @@ const CORE_ENTITY_TYPES = {
     color: "#C44536",
     accent: "#E8785F",
     description: "SRD stat block — monster, NPC, boss, or companion",
-    acceptsInputs: ["location", "faction", "encounter", "loot", "roll_table"],
+    acceptsInputs: ["loot", "roll_table"],
     schema: {
       name: "string", role: "enum: monster|npc|boss|minion|companion",
       size: "enum: SRD sizes", type: "enum: SRD creature types", subtype: "string?",
@@ -109,7 +116,7 @@ const CORE_ENTITY_TYPES = {
     color: "#6B5B95",
     accent: "#A094C7",
     description: "Multi-room environment with encounters, traps, and treasure",
-    acceptsInputs: ["creature", "encounter", "trap", "location", "faction", "loot", "roll_table"],
+    acceptsInputs: ["creature", "encounter", "trap", "loot", "roll_table"],
     schema: {
       name: "string", theme: "string", level_range: "string (e.g., 3-5)",
       backstory: "string",
@@ -129,7 +136,7 @@ const CORE_ENTITY_TYPES = {
     color: "#3D7EA6",
     accent: "#6CB4D9",
     description: "Settlement, wilderness, ruin, or point of interest",
-    acceptsInputs: ["creature", "faction", "roll_table"],
+    acceptsInputs: ["creature", "dungeon", "faction", "roll_table"],
     schema: {
       name: "string", type: "enum: city|town|village|hamlet|wilderness|ruin|landmark|planar",
       region: "string", population: "{ count, demographics }",
@@ -148,7 +155,7 @@ const CORE_ENTITY_TYPES = {
     color: "#B5651D",
     accent: "#D9A066",
     description: "SRD trap — mechanical, magical, or natural hazard",
-    acceptsInputs: ["location", "dungeon", "roll_table"],
+    acceptsInputs: ["roll_table"],
     schema: {
       name: "string", type: "enum: mechanical|magical|natural|hybrid",
       severity: "enum: setback|dangerous|deadly (SRD severity)",
@@ -190,7 +197,7 @@ const CORE_ENTITY_TYPES = {
     color: "#C9A227",
     accent: "#E8D06F",
     description: "SRD magic item or treasure with rarity and properties",
-    acceptsInputs: ["creature", "dungeon", "encounter", "roll_table"],
+    acceptsInputs: ["roll_table"],
     schema: {
       name: "string",
       category: "enum: weapon|armor|potion|ring|rod|scroll|staff|wand|wondrous|mundane",
@@ -294,6 +301,9 @@ const SRD_ROLL_TABLES = [
   },
 ];
 
+const ANTHROPIC_MODELS = ["claude-opus-4-6", "claude-sonnet-4-5", "claude-haiku-4"];
+const OPENAI_MODELS = ["gpt-4o", "gpt-4o-mini", "o1", "o1-mini"];
+
 // ═══════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════
@@ -353,6 +363,11 @@ export default function EntityForge() {
   const [ruleset, setRuleset] = useState("dnd5e-srd");
   const [orchChat, setOrchChat] = useState([]);
   const [orchInput, setOrchInput] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [anthropicApiKey, setAnthropicApiKey] = useState("");
+  const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const [apiProvider, setApiProvider] = useState("anthropic");
+  const [model, setModel] = useState("claude-sonnet-4-5");
   const canvasRef = useRef(null);
   const NODE_W = 200, NODE_H = 100;
 
@@ -377,6 +392,22 @@ export default function EntityForge() {
           const custom = JSON.parse(r.value);
           setEntityTypes((prev) => ({ ...prev, ...custom }));
         }
+      } catch {}
+      try {
+        const r = await window.storage.get("ef2-anthropic-key");
+        if (r?.value) setAnthropicApiKey(r.value);
+      } catch {}
+      try {
+        const r = await window.storage.get("ef2-openai-key");
+        if (r?.value) setOpenaiApiKey(r.value);
+      } catch {}
+      try {
+        const r = await window.storage.get("ef2-api-provider");
+        if (r?.value === "anthropic" || r?.value === "openai") setApiProvider(r.value);
+      } catch {}
+      try {
+        const r = await window.storage.get("ef2-model");
+        if (r?.value) setModel(r.value);
       } catch {}
     })();
   }, []);
@@ -470,8 +501,150 @@ export default function EntityForge() {
     setLockedRolls((p) => ({ ...p, [nodeId]: !p[nodeId] }));
   };
 
+  const saveAnthropicKey = async () => {
+    try { await window.storage.set("ef2-anthropic-key", anthropicApiKey.trim()); } catch {}
+  };
+
+  const clearAnthropicKey = async () => {
+    setAnthropicApiKey("");
+    try { await window.storage.set("ef2-anthropic-key", ""); } catch {}
+  };
+
+  const saveOpenaiKey = async () => {
+    try { await window.storage.set("ef2-openai-key", openaiApiKey.trim()); } catch {}
+  };
+
+  const clearOpenaiKey = async () => {
+    setOpenaiApiKey("");
+    try { await window.storage.set("ef2-openai-key", ""); } catch {}
+  };
+
+  const persistProvider = async (nextProvider) => {
+    setApiProvider(nextProvider);
+    try { await window.storage.set("ef2-api-provider", nextProvider); } catch {}
+  };
+
+  const persistModel = async (nextModel) => {
+    setModel(nextModel);
+    try { await window.storage.set("ef2-model", nextModel); } catch {}
+  };
+
+  useEffect(() => {
+    const modelOptions = apiProvider === "openai" ? OPENAI_MODELS : ANTHROPIC_MODELS;
+    if (!modelOptions.includes(model)) {
+      const fallback = modelOptions[0];
+      setModel(fallback);
+      window.storage.set("ef2-model", fallback).catch(() => {});
+    }
+  }, [apiProvider, model]);
+
   // ── LLM Generation ──
-  const buildPrompt = (node, inputData, rollTableInputs) => {
+  const getActiveApiKey = () => (apiProvider === "openai" ? openaiApiKey : anthropicApiKey).trim();
+
+  const ensureApiKeyConfigured = () => {
+    if (getActiveApiKey()) return true;
+    setError("API key required. Click ⚙️ to configure.");
+    return false;
+  };
+
+  const mapApiError = (status) => {
+    if (status === 401) return "Invalid API key";
+    if (status === 429) return "Rate limited";
+    if (status >= 500) return "API error";
+    return "API error";
+  };
+
+  const buildOpenAIPrompt = (system, user) => [
+    { role: "system", content: system },
+    { role: "user", content: user },
+  ];
+
+  const extractLlmText = (data, provider) => {
+    if (provider === "anthropic") {
+      return data.content?.map((b) => b.type === "text" ? b.text : "").join("") || "";
+    }
+    const content = data.choices?.[0]?.message?.content;
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) return content.map((c) => c?.text || "").join("");
+    return "";
+  };
+
+  const parseJsonWithExcerpt = (rawText) => {
+    if (!rawText) throw new Error("Empty response");
+    const clean = rawText.replace(/```json\s*|```\s*/g, "").trim();
+    if (!clean) throw new Error("Empty response");
+    try {
+      return JSON.parse(clean);
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        const excerpt = clean.slice(0, 220).replace(/\s+/g, " ");
+        throw new Error(`JSON parse error. LLM response excerpt: ${excerpt}${clean.length > 220 ? "..." : ""}`);
+      }
+      throw err;
+    }
+  };
+
+  const callLlm = async ({ system, user, messages, maxTokens }) => {
+    const provider = apiProvider;
+    const apiKey = getActiveApiKey();
+    if (!apiKey) throw new Error("API key required. Click ⚙️ to configure.");
+
+    if (provider === "anthropic") {
+      const anthropicModel = ANTHROPIC_MODELS.includes(model) ? model : ANTHROPIC_MODELS[0];
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: anthropicModel,
+          max_tokens: maxTokens,
+          system,
+          messages: messages || [{ role: "user", content: user }],
+        }),
+      });
+      if (!resp.ok) throw new Error(mapApiError(resp.status));
+      return { provider, data: await resp.json() };
+    }
+
+    const openaiModel = OPENAI_MODELS.includes(model) ? model : OPENAI_MODELS[0];
+    const payload = {
+      model: openaiModel,
+      messages: messages || buildOpenAIPrompt(system, user),
+    };
+    if (openaiModel.startsWith("o1")) payload.max_completion_tokens = maxTokens;
+    else payload.max_tokens = maxTokens;
+
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) throw new Error(mapApiError(resp.status));
+    return { provider, data: await resp.json() };
+  };
+
+  const getNodeDirective = (node, plan) => {
+    if (!plan?.node_directives) return "";
+    const promptLabel = (contextPrompts[node.id] || "").toLowerCase();
+    const typeLabel = (entityTypes[node.type]?.name || "").toLowerCase();
+    const byEntries = Array.isArray(plan.node_directives)
+      ? plan.node_directives.flatMap((item) => Object.entries(item || {}))
+      : Object.entries(plan.node_directives);
+    const match = byEntries.find(([label]) => {
+      const l = String(label || "").toLowerCase();
+      return l.includes(node.id.toLowerCase()) || (typeLabel && l.includes(typeLabel)) || (promptLabel && l.includes(promptLabel));
+    });
+    return match?.[1] || "";
+  };
+
+  const buildPrompt = (node, inputData, rollTableInputs, orchestrationPlan = null) => {
     const et = entityTypes[node.type];
     if (!et) return { system: "", user: "" };
 
@@ -492,11 +665,21 @@ Use the standard CR/XP table for challenge ratings.`;
       ? `\n\nRoll table results to incorporate:\n${rollTableInputs.map((r) => `🎲 ${r.table}: Rolled ${r.roll.total} on ${r.roll.notation} → "${r.entry.result}"`).join("\n")}`
       : "";
 
+    const nodeDirective = getNodeDirective(node, orchestrationPlan);
+    const orchestrationContext = orchestrationPlan
+      ? `\n\nOrchestration plan to incorporate:
+Theme: ${orchestrationPlan.theme || "n/a"}
+Tone: ${orchestrationPlan.tone || "n/a"}
+Narrative threads: ${(orchestrationPlan.narrative_threads || []).join(" | ") || "n/a"}
+Mechanical notes: ${orchestrationPlan.mechanical_notes || "n/a"}
+Node directive: ${nodeDirective || "n/a"}`
+      : "";
+
     const userPrompt = `Generate a D&D 5e ${et.name} as a JSON object.
 
 Required JSON schema:
 ${JSON.stringify(et.schema, null, 2)}
-${inputContext}${rollContext}
+${inputContext}${rollContext}${orchestrationContext}
 ${contextPrompts[node.id] ? `\nUser direction: ${contextPrompts[node.id]}` : ""}
 
 Respond with ONLY the JSON object.`;
@@ -504,10 +687,10 @@ Respond with ONLY the JSON object.`;
     return { system, user: userPrompt };
   };
 
-  const generateNode = async (nodeId) => {
+  const generateNode = async (nodeId, orchestrationPlan = null) => {
+    if (!ensureApiKeyConfigured()) return;
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return;
-    const et = entityTypes[node.type];
 
     // Roll tables don't use LLM — they store their table definition directly
     if (node.type === "roll_table") {
@@ -516,18 +699,13 @@ Respond with ONLY the JSON object.`;
       if (prompt) {
         setGenerating(true); setGeneratingNodeId(nodeId); setError(null);
         try {
-          const resp = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-20250514", max_tokens: 2000,
-              system: "Generate a D&D 5e roll table as JSON. Include: name, dice (e.g. d20), entries (array of {range_min, range_max, result}), tags, source. Respond with ONLY valid JSON.",
-              messages: [{ role: "user", content: `Create a roll table for: ${prompt}\n\nRespond with ONLY JSON.` }],
-            }),
+          const { provider, data } = await callLlm({
+            system: "Generate a D&D 5e roll table as JSON. Include: name, dice (e.g. d20), entries (array of {range_min, range_max, result}), tags, source. Respond with ONLY valid JSON.",
+            user: `Create a roll table for: ${prompt}\n\nRespond with ONLY JSON.`,
+            maxTokens: 2000,
           });
-          const data = await resp.json();
-          const text = data.content?.map((b) => b.type === "text" ? b.text : "").join("");
-          const clean = text.replace(/```json\s*|```\s*/g, "").trim();
-          const parsed = JSON.parse(clean);
+          const text = extractLlmText(data, provider);
+          const parsed = parseJsonWithExcerpt(text);
           setNodes((p) => p.map((n) => n.id === nodeId ? { ...n, result: parsed } : n));
           // Auto-roll
           const res = resolveRollTable(parsed);
@@ -551,19 +729,13 @@ Respond with ONLY the JSON object.`;
       }
     });
 
-    const { system, user } = buildPrompt(node, inputData, rollTableInputs);
+    const { system, user } = buildPrompt(node, inputData, rollTableInputs, orchestrationPlan);
     setGenerating(true); setGeneratingNodeId(nodeId); setError(null);
 
     try {
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 4000, system, messages: [{ role: "user", content: user }] }),
-      });
-      const data = await resp.json();
-      const text = data.content?.map((b) => b.type === "text" ? b.text : "").join("");
-      if (!text) throw new Error("Empty response");
-      const clean = text.replace(/```json\s*|```\s*/g, "").trim();
-      const parsed = JSON.parse(clean);
+      const { provider, data } = await callLlm({ system, user, maxTokens: 4000 });
+      const text = extractLlmText(data, provider);
+      const parsed = parseJsonWithExcerpt(text);
       setNodes((p) => p.map((n) => n.id === nodeId ? { ...n, result: parsed } : n));
     } catch (err) { setError(`Generation failed: ${err.message}`); }
     finally { setGenerating(false); setGeneratingNodeId(null); }
@@ -571,7 +743,9 @@ Respond with ONLY the JSON object.`;
 
   // Orchestrated generation
   const generateAll = async () => {
+    if (!ensureApiKeyConfigured()) return;
     setError(null);
+    let activeOrchPlan = null;
     // First resolve all roll tables
     const rollTableNodes = nodes.filter((n) => n.type === "roll_table");
     for (const rtn of rollTableNodes) {
@@ -592,20 +766,16 @@ Respond with ONLY the JSON object.`;
           return `- Node "${contextPrompts[n.id] || et?.name}" (${et?.name}) ${ins.length ? `← inputs: ${ins.join(", ")}` : "(no inputs)"}`;
         }).join("\n");
 
-        const resp = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-20250514", max_tokens: 2000,
-            system: "You are the Entity Forge Orchestrator. Analyze the D&D content generation graph and produce a coherent generation plan. Respond with ONLY JSON: { theme: string, tone: string, narrative_threads: string[], node_directives: { [node_description]: string }[], mechanical_notes: string }",
-            messages: [{ role: "user", content: `Plan generation for this graph:\n${graphDesc}\n\nRoll table results: ${JSON.stringify(Object.values(rollResults).map((r) => `${r.table}: ${r.entry.result}`))}\n\nProduce a cohesive generation plan as JSON.` }],
-          }),
+        const { provider, data } = await callLlm({
+          system: "You are the Entity Forge Orchestrator. Analyze the D&D content generation graph and produce a coherent generation plan. Respond with ONLY JSON: { theme: string, tone: string, narrative_threads: string[], node_directives: { [node_description]: string }[], mechanical_notes: string }",
+          user: `Plan generation for this graph:\n${graphDesc}\n\nRoll table results: ${JSON.stringify(Object.values(rollResults).map((r) => `${r.table}: ${r.entry.result}`))}\n\nProduce a cohesive generation plan as JSON.`,
+          maxTokens: 2000,
         });
-        const data = await resp.json();
-        const text = data.content?.map((b) => b.type === "text" ? b.text : "").join("");
-        const clean = text.replace(/```json\s*|```\s*/g, "").trim();
-        const plan = JSON.parse(clean);
+        const text = extractLlmText(data, provider);
+        const plan = parseJsonWithExcerpt(text);
         setOrchPlan(plan);
-      } catch (err) { console.warn("Orchestration plan failed, falling back to sequential:", err); }
+        activeOrchPlan = plan;
+      } catch (err) { setError("Orchestration plan failed, falling back to sequential generation."); }
       setGenerating(false);
     }
 
@@ -614,7 +784,7 @@ Respond with ONLY the JSON object.`;
     for (const nodeId of order) {
       const node = nodes.find((n) => n.id === nodeId);
       if (node?.type === "roll_table") continue; // already handled
-      await generateNode(nodeId);
+      await generateNode(nodeId, orchMode === "orchestrated" ? activeOrchPlan : null);
     }
     setOrchPlan(null);
   };
@@ -644,6 +814,7 @@ Respond with ONLY the JSON object.`;
 
   // ── Orchestrator Chat ──
   const sendOrchChat = async () => {
+    if (!ensureApiKeyConfigured()) return;
     if (!orchInput.trim()) return;
     const userMsg = orchInput.trim();
     setOrchChat((p) => [...p, { role: "user", content: userMsg }]);
@@ -653,16 +824,15 @@ Respond with ONLY the JSON object.`;
       return `${et?.icon} ${et?.name}${n.result?.name ? ` "${n.result.name}"` : ""}${contextPrompts[n.id] ? ` (prompt: "${contextPrompts[n.id]}")` : ""}`;
     }).join(", ");
     try {
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514", max_tokens: 1000,
-          system: `You are the Entity Forge Orchestrator, an expert D&D 5e content designer. The user has a node graph with: ${graphDesc || "no nodes yet"}. ${Object.keys(rollResults).length ? `Roll results: ${JSON.stringify(Object.values(rollResults).map((r) => `${r.table}: ${r.entry.result}`))}` : ""} Help them design their content graph. Suggest nodes, connections, themes, and improvements. Be concise and creative.`,
-          messages: [...orchChat, { role: "user", content: userMsg }].slice(-10),
-        }),
+      const system = `You are the Entity Forge Orchestrator, an expert D&D 5e content designer. The user has a node graph with: ${graphDesc || "no nodes yet"}. ${Object.keys(rollResults).length ? `Roll results: ${JSON.stringify(Object.values(rollResults).map((r) => `${r.table}: ${r.entry.result}`))}` : ""} Help them design their content graph. Suggest nodes, connections, themes, and improvements. Be concise and creative.`;
+      const history = [...orchChat, { role: "user", content: userMsg }].slice(-10);
+      const { provider, data } = await callLlm({
+        system,
+        user: userMsg,
+        messages: apiProvider === "openai" ? [{ role: "system", content: system }, ...history] : history,
+        maxTokens: 1000,
       });
-      const data = await resp.json();
-      const text = data.content?.map((b) => b.type === "text" ? b.text : "").join("");
+      const text = extractLlmText(data, provider);
       setOrchChat((p) => [...p, { role: "assistant", content: text || "..." }]);
     } catch { setOrchChat((p) => [...p, { role: "assistant", content: "Connection error. Try again." }]); }
   };
@@ -698,6 +868,7 @@ Respond with ONLY the JSON object.`;
   const coreTypes = Object.values(entityTypes).filter((t) => !t.isCustom && t.id !== "roll_table");
   const customTypes = Object.values(entityTypes).filter((t) => t.isCustom);
   const rollTableType = entityTypes.roll_table;
+  const modelOptions = apiProvider === "openai" ? OPENAI_MODELS : ANTHROPIC_MODELS;
 
   // ═══════════════════════════════════════════════════════════
   // RENDER
@@ -730,6 +901,13 @@ Respond with ONLY the JSON object.`;
         <div style={{ padding: "12px 14px", borderBottom: "1px solid #1E1E2E" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ fontFamily: "'Cinzel', serif", fontSize: 17, fontWeight: 700, color: "#D4A843", letterSpacing: 1 }}>⚒ Entity Forge</div>
+            <button
+              onClick={() => setShowSettings((s) => !s)}
+              style={{ background: "transparent", border: "1px solid #2a2a3a", borderRadius: 5, color: "#8a8a9a", width: 28, height: 24, cursor: "pointer", fontSize: 13 }}
+              title="API Settings"
+            >
+              ⚙️
+            </button>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
             <select value={ruleset} onChange={(e) => setRuleset(e.target.value)} style={{ flex: 1, background: "#0D0D12", border: "1px solid #2a2a3a", borderRadius: 4, padding: "3px 6px", color: "#8a8a9a", fontSize: 10, fontFamily: "'Source Sans 3'" }}>
@@ -738,6 +916,51 @@ Respond with ONLY the JSON object.`;
               <option value="pf2e" disabled>Pathfinder 2e (coming)</option>
             </select>
           </div>
+          {showSettings && (
+            <div className="fade-in" style={{ marginTop: 8, background: "#0D0D12", border: "1px solid #2a2a3a", borderRadius: 6, padding: 8, display: "grid", gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 9, color: "#6a6a7a", marginBottom: 3 }}>Provider</div>
+                <select value={apiProvider} onChange={(e) => persistProvider(e.target.value)}
+                  style={{ width: "100%", background: "#12121C", border: "1px solid #2a2a3a", borderRadius: 4, padding: "4px 6px", color: "#D4CFC4", fontSize: 11 }}>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 9, color: "#6a6a7a", marginBottom: 3 }}>Model</div>
+                <select value={model} onChange={(e) => persistModel(e.target.value)}
+                  style={{ width: "100%", background: "#12121C", border: "1px solid #2a2a3a", borderRadius: 4, padding: "4px 6px", color: "#D4CFC4", fontSize: 11 }}>
+                  {modelOptions.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                  <div style={{ fontSize: 9, color: "#6a6a7a" }}>Anthropic API Key</div>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: anthropicApiKey.trim() ? "#5B8C5A" : "#C44536", display: "inline-block" }} />
+                </div>
+                <input type="password" value={anthropicApiKey} onChange={(e) => setAnthropicApiKey(e.target.value)}
+                  placeholder="sk-ant-..."
+                  style={{ width: "100%", background: "#12121C", border: "1px solid #2a2a3a", borderRadius: 4, padding: "5px 6px", color: "#D4CFC4", fontSize: 11 }} />
+                <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                  <button onClick={saveAnthropicKey} style={{ flex: 1, padding: "4px 0", background: "#1a2a1a", border: "1px solid #2f5a2f", borderRadius: 4, color: "#82B881", fontSize: 10, cursor: "pointer" }}>Save</button>
+                  <button onClick={clearAnthropicKey} style={{ flex: 1, padding: "4px 0", background: "#2a1a1a", border: "1px solid #5a2f2f", borderRadius: 4, color: "#E8785F", fontSize: 10, cursor: "pointer" }}>Clear</button>
+                </div>
+              </div>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                  <div style={{ fontSize: 9, color: "#6a6a7a" }}>OpenAI API Key</div>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: openaiApiKey.trim() ? "#5B8C5A" : "#C44536", display: "inline-block" }} />
+                </div>
+                <input type="password" value={openaiApiKey} onChange={(e) => setOpenaiApiKey(e.target.value)}
+                  placeholder="sk-..."
+                  style={{ width: "100%", background: "#12121C", border: "1px solid #2a2a3a", borderRadius: 4, padding: "5px 6px", color: "#D4CFC4", fontSize: 11 }} />
+                <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                  <button onClick={saveOpenaiKey} style={{ flex: 1, padding: "4px 0", background: "#1a2a1a", border: "1px solid #2f5a2f", borderRadius: 4, color: "#82B881", fontSize: 10, cursor: "pointer" }}>Save</button>
+                  <button onClick={clearOpenaiKey} style={{ flex: 1, padding: "4px 0", background: "#2a1a1a", border: "1px solid #5a2f2f", borderRadius: 4, color: "#E8785F", fontSize: 10, cursor: "pointer" }}>Clear</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Main Tabs */}
@@ -920,6 +1143,16 @@ Respond with ONLY the JSON object.`;
                         {orchPlan.theme && <div><strong>Theme:</strong> {orchPlan.theme}</div>}
                         {orchPlan.tone && <div><strong>Tone:</strong> {orchPlan.tone}</div>}
                         {orchPlan.narrative_threads?.map((t, i) => <div key={i} style={{ marginTop: 2 }}>• {t}</div>)}
+                        {orchPlan.mechanical_notes && <div style={{ marginTop: 4 }}><strong>Mechanical Notes:</strong> {orchPlan.mechanical_notes}</div>}
+                        {Array.isArray(orchPlan.node_directives) && orchPlan.node_directives.length > 0 && (
+                          <div style={{ marginTop: 5 }}>
+                            <strong>Node Directives:</strong>
+                            {orchPlan.node_directives.map((entry, i) => {
+                              const [k, v] = Object.entries(entry || {})[0] || [];
+                              return <div key={i} style={{ marginTop: 2 }}>• {k || "Node"}: {v || ""}</div>;
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
