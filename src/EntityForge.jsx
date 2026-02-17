@@ -332,6 +332,755 @@ function topologicalSort(nodes, connections) {
   return order;
 }
 
+const CR_VALUES = ["0", "1/8", "1/4", "1/2", ...Array.from({ length: 30 }, (_, i) => String(i + 1))];
+
+const ASSET_SHEET_SCHEMAS = Object.fromEntries(
+  Object.entries(CORE_ENTITY_TYPES).map(([id, value]) => [id, value.schema])
+);
+
+export { ASSET_SHEET_SCHEMAS };
+
+const SHEET_PANEL_STYLE = {
+  width: "min(1100px, 94vw)",
+  maxHeight: "92vh",
+  overflow: "auto",
+  borderRadius: 14,
+  border: "1px solid #5d4b2f",
+  background: "linear-gradient(180deg, #f4e4c6 0%, #ecd8b1 100%)",
+  color: "#2f2414",
+  boxShadow: "0 24px 70px rgba(0,0,0,0.55)",
+};
+
+const sectionTitleStyle = {
+  fontFamily: "'Cinzel', serif",
+  fontSize: 14,
+  fontWeight: 700,
+  letterSpacing: 0.6,
+  color: "#553a1e",
+  borderBottom: "1px solid #b89f74",
+  paddingBottom: 4,
+  marginBottom: 8,
+};
+
+const sheetInputStyle = {
+  width: "100%",
+  border: "1px solid #bca57d",
+  background: "#fffaf0",
+  borderRadius: 6,
+  padding: "7px 8px",
+  color: "#2f2414",
+  fontSize: 12,
+  fontFamily: "'Source Sans 3', sans-serif",
+};
+
+const sheetLabelStyle = {
+  fontSize: 10,
+  textTransform: "uppercase",
+  letterSpacing: 1.1,
+  color: "#5f4b2f",
+  fontWeight: 600,
+  marginBottom: 4,
+};
+
+function toNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function parseCrValue(cr) {
+  const str = String(cr ?? "0").trim();
+  if (str === "1/8") return 0.125;
+  if (str === "1/4") return 0.25;
+  if (str === "1/2") return 0.5;
+  const num = Number(str);
+  if (!Number.isFinite(num)) return 0;
+  return clamp(num, 0, 30);
+}
+
+function proficiencyFromCr(cr) {
+  const crNum = parseCrValue(cr);
+  if (crNum < 5) return 2;
+  if (crNum < 9) return 3;
+  if (crNum < 13) return 4;
+  if (crNum < 17) return 5;
+  if (crNum < 21) return 6;
+  if (crNum < 25) return 7;
+  if (crNum < 29) return 8;
+  return 9;
+}
+
+function abilityMod(score) {
+  return Math.floor((toNumber(score, 10) - 10) / 2);
+}
+
+function parseCsv(value) {
+  return String(value || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function toCsv(values) {
+  return Array.isArray(values) ? values.join(", ") : "";
+}
+
+function ObjectListEditor({ title, items, onChange, fields }) {
+  const list = Array.isArray(items) ? items : [];
+  return (
+    <div style={{ border: "1px solid #b89f74", borderRadius: 8, padding: 8, background: "#fff8ea" }}>
+      <div style={{ ...sheetLabelStyle, marginBottom: 6 }}>{title}</div>
+      {list.map((item, idx) => (
+        <div key={`${title}-${idx}`} style={{ border: "1px solid #d5c2a0", borderRadius: 6, padding: 8, marginBottom: 6, background: "#fffcf5" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 6 }}>
+            {fields.map((field) => (
+              <div key={field.key}>
+                <div style={sheetLabelStyle}>{field.label}</div>
+                <input
+                  value={item?.[field.key] ?? ""}
+                  onChange={(e) => {
+                    const next = [...list];
+                    next[idx] = { ...next[idx], [field.key]: field.type === "number" ? toNumber(e.target.value, 0) : e.target.value };
+                    onChange(next);
+                  }}
+                  type={field.type === "number" ? "number" : "text"}
+                  style={sheetInputStyle}
+                />
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => onChange(list.filter((_, i) => i !== idx))}
+            style={{ marginTop: 6, border: "1px solid #9f3c24", background: "#f8e1d8", color: "#8b2f1b", borderRadius: 5, padding: "4px 8px", fontSize: 11, cursor: "pointer" }}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={() => onChange([...list, Object.fromEntries(fields.map((f) => [f.key, f.type === "number" ? 0 : ""]))])}
+        style={{ border: "1px dashed #7a5d2f", background: "transparent", color: "#5f4b2f", borderRadius: 5, padding: "5px 8px", fontSize: 11, cursor: "pointer" }}
+      >
+        + Add
+      </button>
+    </div>
+  );
+}
+
+function SheetShell({ title, subtitle, dirty, onSave, onClose, saveDisabled, children }) {
+  return (
+    <div style={SHEET_PANEL_STYLE} onClick={(e) => e.stopPropagation()}>
+      <div style={{ position: "sticky", top: 0, zIndex: 5, background: "linear-gradient(180deg, #f2dfbc 0%, #ebd4ac 100%)", borderBottom: "1px solid #b89f74", padding: "16px 20px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <div>
+            <div style={{ fontFamily: "'Cinzel', serif", fontSize: 24, color: "#553a1e", fontWeight: 700 }}>{title}</div>
+            <div style={{ fontSize: 12, color: "#6a5235" }}>{subtitle}</div>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={onClose} style={{ border: "1px solid #8f7250", background: "transparent", color: "#553a1e", borderRadius: 6, padding: "7px 12px", cursor: "pointer", fontWeight: 600 }}>
+              Close
+            </button>
+            <button onClick={onSave} disabled={saveDisabled} style={{ border: "1px solid #5d4b2f", background: saveDisabled ? "#c7ba9f" : "#5d4b2f", color: saveDisabled ? "#786c56" : "#f9edd5", borderRadius: 6, padding: "7px 12px", cursor: saveDisabled ? "not-allowed" : "pointer", fontWeight: 700 }}>
+              Save Changes{dirty ? " *" : ""}
+            </button>
+          </div>
+        </div>
+      </div>
+      <div style={{ padding: 20 }}>{children}</div>
+    </div>
+  );
+}
+
+function CreatureSheet({ entity, onSave, onClose }) {
+  const [draft, setDraft] = useState({});
+  const [errors, setErrors] = useState([]);
+  const initialRef = useRef("");
+
+  useEffect(() => {
+    const source = entity?.data || {};
+    const next = {
+      name: source.name || "",
+      role: source.role || "monster",
+      size: source.size || "Medium",
+      type: source.type || "Humanoid",
+      subtype: source.subtype || "",
+      alignment: source.alignment || "True Neutral",
+      armor_class: { value: toNumber(source.armor_class?.value, 10), type: source.armor_class?.type || "natural armor" },
+      hit_points: { average: toNumber(source.hit_points?.average, 10), formula: source.hit_points?.formula || "2d8+2" },
+      speed: {
+        walk: toNumber(source.speed?.walk, 30),
+        fly: toNumber(source.speed?.fly, 0),
+        swim: toNumber(source.speed?.swim, 0),
+        climb: toNumber(source.speed?.climb, 0),
+        burrow: toNumber(source.speed?.burrow, 0),
+      },
+      ability_scores: {
+        str: clamp(toNumber(source.ability_scores?.str, 10), 1, 30),
+        dex: clamp(toNumber(source.ability_scores?.dex, 10), 1, 30),
+        con: clamp(toNumber(source.ability_scores?.con, 10), 1, 30),
+        int: clamp(toNumber(source.ability_scores?.int, 10), 1, 30),
+        wis: clamp(toNumber(source.ability_scores?.wis, 10), 1, 30),
+        cha: clamp(toNumber(source.ability_scores?.cha, 10), 1, 30),
+      },
+      saving_throws: source.saving_throws || {},
+      skills: source.skills || {},
+      vulnerabilities: source.vulnerabilities || [],
+      resistances: source.resistances || [],
+      immunities: source.immunities || [],
+      senses: {
+        darkvision: toNumber(source.senses?.darkvision, 0),
+        blindsight: toNumber(source.senses?.blindsight, 0),
+        tremorsense: toNumber(source.senses?.tremorsense, 0),
+        truesight: toNumber(source.senses?.truesight, 0),
+        passive_perception: toNumber(source.senses?.passive_perception, 10),
+      },
+      languages: source.languages || [],
+      challenge_rating: source.challenge_rating || "1",
+      proficiency_bonus: toNumber(source.proficiency_bonus, proficiencyFromCr(source.challenge_rating || "1")),
+      traits: Array.isArray(source.traits) ? source.traits : [],
+      actions: Array.isArray(source.actions) ? source.actions : [],
+      bonus_actions: Array.isArray(source.bonus_actions) ? source.bonus_actions : [],
+      reactions: Array.isArray(source.reactions) ? source.reactions : [],
+      legendary_actions: Array.isArray(source.legendary_actions) ? source.legendary_actions : [],
+      lair_actions: Array.isArray(source.lair_actions) ? source.lair_actions : [],
+      appearance: source.appearance || "",
+      backstory: source.backstory || "",
+      equipment: source.equipment || [],
+    };
+    setDraft(next);
+    initialRef.current = JSON.stringify(next);
+    setErrors([]);
+  }, [entity]);
+
+  if (!entity) return null;
+
+  const dirty = JSON.stringify(draft) !== initialRef.current;
+  const derivedProf = proficiencyFromCr(draft.challenge_rating);
+  const perceptionMod = typeof draft.skills?.Perception === "number"
+    ? draft.skills.Perception
+    : abilityMod(draft.ability_scores?.wis);
+  const derivedPassive = 10 + perceptionMod;
+
+  const setAbility = (ability, value) => {
+    setDraft((prev) => ({
+      ...prev,
+      ability_scores: { ...prev.ability_scores, [ability]: clamp(toNumber(value, 10), 1, 30) },
+    }));
+  };
+
+  const setSpeed = (key, value) => {
+    setDraft((prev) => ({ ...prev, speed: { ...prev.speed, [key]: clamp(toNumber(value, 0), 0, 200) } }));
+  };
+
+  const handleClose = () => {
+    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    onClose();
+  };
+
+  const handleSave = () => {
+    const nextErrors = [];
+    if (!draft.name?.trim()) nextErrors.push("Name is required.");
+    if (!CR_VALUES.includes(String(draft.challenge_rating))) nextErrors.push("Challenge Rating must be between 0 and 30 (supports 1/8, 1/4, 1/2).");
+    Object.entries(draft.ability_scores || {}).forEach(([k, v]) => {
+      const n = toNumber(v, 10);
+      if (n < 1 || n > 30) nextErrors.push(`${k.toUpperCase()} must be between 1 and 30.`);
+    });
+    setErrors(nextErrors);
+    if (nextErrors.length > 0) return;
+
+    onSave({
+      ...draft,
+      proficiency_bonus: derivedProf,
+      senses: {
+        ...draft.senses,
+        passive_perception: toNumber(draft.senses?.passive_perception, derivedPassive),
+      },
+    });
+  };
+
+  return (
+    <SheetShell
+      title={draft.name || "Creature Sheet"}
+      subtitle="D&D 5e Creature Stat Block"
+      dirty={dirty}
+      onSave={handleSave}
+      onClose={handleClose}
+    >
+      {errors.length > 0 && (
+        <div style={{ marginBottom: 10, border: "1px solid #9f3c24", background: "#f8e1d8", color: "#8b2f1b", borderRadius: 6, padding: "8px 10px", fontSize: 12 }}>
+          {errors.map((err, idx) => <div key={`${err}-${idx}`}>• {err}</div>)}
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 12 }}>
+        <div>
+          <div style={sheetLabelStyle}>Name</div>
+          <input value={draft.name || ""} onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value }))} style={sheetInputStyle} />
+        </div>
+        <div>
+          <div style={sheetLabelStyle}>Role</div>
+          <select value={draft.role || "monster"} onChange={(e) => setDraft((p) => ({ ...p, role: e.target.value }))} style={sheetInputStyle}>
+            {["monster", "npc", "boss", "minion", "companion"].map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={sheetLabelStyle}>Size</div>
+          <select value={draft.size || "Medium"} onChange={(e) => setDraft((p) => ({ ...p, size: e.target.value }))} style={sheetInputStyle}>
+            {SRD_RULESET.reference.sizes.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={sheetLabelStyle}>Type</div>
+          <select value={draft.type || "Humanoid"} onChange={(e) => setDraft((p) => ({ ...p, type: e.target.value }))} style={sheetInputStyle}>
+            {SRD_RULESET.reference.creature_types.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={sheetLabelStyle}>Subtype</div>
+          <input value={draft.subtype || ""} onChange={(e) => setDraft((p) => ({ ...p, subtype: e.target.value }))} style={sheetInputStyle} />
+        </div>
+        <div>
+          <div style={sheetLabelStyle}>Alignment</div>
+          <select value={draft.alignment || "True Neutral"} onChange={(e) => setDraft((p) => ({ ...p, alignment: e.target.value }))} style={sheetInputStyle}>
+            {SRD_RULESET.reference.alignments.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={sectionTitleStyle}>Defense & Movement</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 12 }}>
+        <div>
+          <div style={sheetLabelStyle}>Armor Class</div>
+          <input type="number" value={draft.armor_class?.value ?? 10} onChange={(e) => setDraft((p) => ({ ...p, armor_class: { ...p.armor_class, value: clamp(toNumber(e.target.value, 10), 1, 40) } }))} style={sheetInputStyle} />
+        </div>
+        <div>
+          <div style={sheetLabelStyle}>AC Type</div>
+          <input value={draft.armor_class?.type || ""} onChange={(e) => setDraft((p) => ({ ...p, armor_class: { ...p.armor_class, type: e.target.value } }))} style={sheetInputStyle} />
+        </div>
+        <div>
+          <div style={sheetLabelStyle}>HP Average</div>
+          <input type="number" value={draft.hit_points?.average ?? 0} onChange={(e) => setDraft((p) => ({ ...p, hit_points: { ...p.hit_points, average: clamp(toNumber(e.target.value, 1), 1, 999) } }))} style={sheetInputStyle} />
+        </div>
+        <div>
+          <div style={sheetLabelStyle}>HP Formula</div>
+          <input value={draft.hit_points?.formula || ""} onChange={(e) => setDraft((p) => ({ ...p, hit_points: { ...p.hit_points, formula: e.target.value } }))} style={sheetInputStyle} />
+        </div>
+        {["walk", "fly", "swim", "climb", "burrow"].map((speedKey) => (
+          <div key={speedKey}>
+            <div style={sheetLabelStyle}>{speedKey} (ft.)</div>
+            <input type="number" value={draft.speed?.[speedKey] ?? 0} onChange={(e) => setSpeed(speedKey, e.target.value)} style={sheetInputStyle} />
+          </div>
+        ))}
+      </div>
+
+      <div style={sectionTitleStyle}>Abilities & Combat Math</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(80px, 1fr))", gap: 8, marginBottom: 8 }}>
+        {SRD_RULESET.reference.abilities.map((ab) => (
+          <div key={ab} style={{ border: "1px solid #b89f74", borderRadius: 8, padding: 8, background: "#fff8ea" }}>
+            <div style={{ ...sheetLabelStyle, marginBottom: 3 }}>{ab.toUpperCase()}</div>
+            <input type="number" min={1} max={30} value={draft.ability_scores?.[ab] ?? 10} onChange={(e) => setAbility(ab, e.target.value)} style={{ ...sheetInputStyle, textAlign: "center", fontWeight: 700 }} />
+            <div style={{ marginTop: 3, fontSize: 11, color: "#5f4b2f", textAlign: "center" }}>
+              Mod {abilityMod(draft.ability_scores?.[ab]) >= 0 ? "+" : ""}{abilityMod(draft.ability_scores?.[ab])}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 12 }}>
+        <div>
+          <div style={sheetLabelStyle}>Challenge Rating</div>
+          <select value={String(draft.challenge_rating || "1")} onChange={(e) => setDraft((p) => ({ ...p, challenge_rating: e.target.value, proficiency_bonus: proficiencyFromCr(e.target.value) }))} style={sheetInputStyle}>
+            {CR_VALUES.map((cr) => <option key={cr} value={cr}>{cr}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={sheetLabelStyle}>Proficiency Bonus (derived)</div>
+          <input value={`+${derivedProf}`} readOnly style={{ ...sheetInputStyle, background: "#efe4ce" }} />
+        </div>
+        <div>
+          <div style={sheetLabelStyle}>Passive Perception</div>
+          <input
+            type="number"
+            value={draft.senses?.passive_perception ?? derivedPassive}
+            onChange={(e) => setDraft((p) => ({ ...p, senses: { ...p.senses, passive_perception: clamp(toNumber(e.target.value, derivedPassive), 1, 50) } }))}
+            style={sheetInputStyle}
+          />
+          <div style={{ fontSize: 10, color: "#6a5235", marginTop: 2 }}>Suggested: {derivedPassive}</div>
+        </div>
+      </div>
+
+      <div style={sectionTitleStyle}>Senses & Language</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 12 }}>
+        {["darkvision", "blindsight", "tremorsense", "truesight"].map((sense) => (
+          <div key={sense}>
+            <div style={sheetLabelStyle}>{sense} (ft.)</div>
+            <input type="number" value={draft.senses?.[sense] ?? 0} onChange={(e) => setDraft((p) => ({ ...p, senses: { ...p.senses, [sense]: clamp(toNumber(e.target.value, 0), 0, 240) } }))} style={sheetInputStyle} />
+          </div>
+        ))}
+        <div style={{ gridColumn: "1 / -1" }}>
+          <div style={sheetLabelStyle}>Languages (comma-separated)</div>
+          <input value={toCsv(draft.languages)} onChange={(e) => setDraft((p) => ({ ...p, languages: parseCsv(e.target.value) }))} style={sheetInputStyle} />
+        </div>
+      </div>
+
+      <div style={sectionTitleStyle}>Damage Modifiers</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
+        <div>
+          <div style={sheetLabelStyle}>Vulnerabilities</div>
+          <input value={toCsv(draft.vulnerabilities)} onChange={(e) => setDraft((p) => ({ ...p, vulnerabilities: parseCsv(e.target.value) }))} style={sheetInputStyle} />
+        </div>
+        <div>
+          <div style={sheetLabelStyle}>Resistances</div>
+          <input value={toCsv(draft.resistances)} onChange={(e) => setDraft((p) => ({ ...p, resistances: parseCsv(e.target.value) }))} style={sheetInputStyle} />
+        </div>
+        <div>
+          <div style={sheetLabelStyle}>Immunities</div>
+          <input value={toCsv(draft.immunities)} onChange={(e) => setDraft((p) => ({ ...p, immunities: parseCsv(e.target.value) }))} style={sheetInputStyle} />
+        </div>
+      </div>
+
+      <div style={sectionTitleStyle}>Features & Actions</div>
+      <div style={{ display: "grid", gap: 10 }}>
+        <ObjectListEditor title="Traits" items={draft.traits} onChange={(traits) => setDraft((p) => ({ ...p, traits }))} fields={[{ key: "name", label: "Name" }, { key: "description", label: "Description" }]} />
+        <ObjectListEditor title="Actions" items={draft.actions} onChange={(actions) => setDraft((p) => ({ ...p, actions }))} fields={[{ key: "name", label: "Name" }, { key: "description", label: "Description" }, { key: "attack_bonus", label: "Attack Bonus", type: "number" }, { key: "damage", label: "Damage" }]} />
+        <ObjectListEditor title="Bonus Actions" items={draft.bonus_actions} onChange={(bonus_actions) => setDraft((p) => ({ ...p, bonus_actions }))} fields={[{ key: "name", label: "Name" }, { key: "description", label: "Description" }]} />
+        <ObjectListEditor title="Reactions" items={draft.reactions} onChange={(reactions) => setDraft((p) => ({ ...p, reactions }))} fields={[{ key: "name", label: "Name" }, { key: "trigger", label: "Trigger" }, { key: "description", label: "Description" }]} />
+      </div>
+    </SheetShell>
+  );
+}
+
+function GenericEntitySheet({ entity, onSave, onClose, title, subtitle, fields }) {
+  const [draft, setDraft] = useState(entity?.data || {});
+  const initialRef = useRef(JSON.stringify(entity?.data || {}));
+
+  useEffect(() => {
+    const data = entity?.data || {};
+    setDraft(data);
+    initialRef.current = JSON.stringify(data);
+  }, [entity]);
+
+  if (!entity) return null;
+  const dirty = JSON.stringify(draft) !== initialRef.current;
+
+  const setField = (key, value) => setDraft((p) => ({ ...p, [key]: value }));
+  const handleClose = () => {
+    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    onClose();
+  };
+
+  return (
+    <SheetShell title={title} subtitle={subtitle} dirty={dirty} onSave={() => onSave(draft)} onClose={handleClose}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+        {fields.map((field) => (
+          <div key={field.key} style={{ gridColumn: field.multiline ? "1 / -1" : "auto" }}>
+            <div style={sheetLabelStyle}>{field.label}</div>
+            {field.type === "number" ? (
+              <input
+                type="number"
+                value={toNumber(draft[field.key], field.defaultValue ?? 0)}
+                onChange={(e) => setField(field.key, toNumber(e.target.value, field.defaultValue ?? 0))}
+                style={sheetInputStyle}
+              />
+            ) : field.type === "select" ? (
+              <select value={draft[field.key] || field.options?.[0] || ""} onChange={(e) => setField(field.key, e.target.value)} style={sheetInputStyle}>
+                {(field.options || []).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            ) : field.type === "csv" ? (
+              <input value={toCsv(draft[field.key])} onChange={(e) => setField(field.key, parseCsv(e.target.value))} style={sheetInputStyle} />
+            ) : (
+              <textarea
+                value={field.json ? JSON.stringify(draft[field.key] ?? field.defaultValue ?? (field.multiline ? "" : {}), null, 2) : (draft[field.key] ?? "")}
+                onChange={(e) => {
+                  if (!field.json) {
+                    setField(field.key, e.target.value);
+                    return;
+                  }
+                  try {
+                    setField(field.key, JSON.parse(e.target.value));
+                  } catch {
+                    setField(field.key, e.target.value);
+                  }
+                }}
+                style={{ ...sheetInputStyle, minHeight: field.multiline ? 110 : 70, fontFamily: field.json ? "'Fira Code', monospace" : "'Source Sans 3', sans-serif" }}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    </SheetShell>
+  );
+}
+
+function EncounterSheet({ entity, onSave, onClose }) {
+  return (
+    <GenericEntitySheet
+      entity={entity}
+      onSave={onSave}
+      onClose={onClose}
+      title={entity?.data?.name || "Encounter Sheet"}
+      subtitle="Combat, social, exploration, or puzzle encounter details"
+      fields={[
+        { key: "name", label: "Name" },
+        { key: "type", label: "Type", type: "select", options: ["combat", "social", "exploration", "puzzle", "trap", "mixed"] },
+        { key: "difficulty", label: "Difficulty", type: "select", options: ["easy", "medium", "hard", "deadly"] },
+        { key: "party_level", label: "Party Level", type: "number", defaultValue: 1 },
+        { key: "party_size", label: "Party Size", type: "number", defaultValue: 4 },
+        { key: "description", label: "Description", multiline: true },
+        { key: "environment", label: "Environment (JSON)", multiline: true, json: true, defaultValue: {} },
+        { key: "creatures", label: "Creatures (JSON)", multiline: true, json: true, defaultValue: [] },
+        { key: "objectives", label: "Objectives (JSON)", multiline: true, json: true, defaultValue: {} },
+        { key: "complications", label: "Complications", type: "csv" },
+        { key: "rewards", label: "Rewards (JSON)", multiline: true, json: true, defaultValue: {} },
+        { key: "aftermath", label: "Aftermath", multiline: true },
+      ]}
+    />
+  );
+}
+
+function DungeonSheet({ entity, onSave, onClose }) {
+  return (
+    <GenericEntitySheet
+      entity={entity}
+      onSave={onSave}
+      onClose={onClose}
+      title={entity?.data?.name || "Dungeon Sheet"}
+      subtitle="Rooms, connections, hazards, and treasure"
+      fields={[
+        { key: "name", label: "Name" },
+        { key: "theme", label: "Theme" },
+        { key: "level_range", label: "Level Range" },
+        { key: "backstory", label: "Backstory", multiline: true },
+        { key: "rooms", label: "Rooms (JSON)", multiline: true, json: true, defaultValue: [] },
+        { key: "entry_points", label: "Entry Points", type: "csv" },
+        { key: "boss_room", label: "Boss Room ID" },
+        { key: "environmental_hazards", label: "Hazards (JSON)", multiline: true, json: true, defaultValue: [] },
+        { key: "treasure_hoard", label: "Treasure Hoard (JSON)", multiline: true, json: true, defaultValue: {} },
+        { key: "secrets", label: "Secrets (JSON)", multiline: true, json: true, defaultValue: [] },
+      ]}
+    />
+  );
+}
+
+function LocationSheet({ entity, onSave, onClose }) {
+  return (
+    <GenericEntitySheet
+      entity={entity}
+      onSave={onSave}
+      onClose={onClose}
+      title={entity?.data?.name || "Location Sheet"}
+      subtitle="Geography, NPCs, rumors, and points of interest"
+      fields={[
+        { key: "name", label: "Name" },
+        { key: "type", label: "Type", type: "select", options: ["city", "town", "village", "hamlet", "wilderness", "ruin", "landmark", "planar"] },
+        { key: "region", label: "Region" },
+        { key: "government", label: "Government" },
+        { key: "economy", label: "Economy" },
+        { key: "description", label: "Description", multiline: true },
+        { key: "atmosphere", label: "Atmosphere", multiline: true },
+        { key: "points_of_interest", label: "Points of Interest (JSON)", multiline: true, json: true, defaultValue: [] },
+        { key: "factions_present", label: "Factions Present (JSON)", multiline: true, json: true, defaultValue: [] },
+        { key: "rumors", label: "Rumors (JSON)", multiline: true, json: true, defaultValue: [] },
+        { key: "dangers", label: "Dangers", type: "csv" },
+        { key: "history", label: "History", multiline: true },
+      ]}
+    />
+  );
+}
+
+function TrapSheet({ entity, onSave, onClose }) {
+  const [draft, setDraft] = useState(entity?.data || {});
+  const initialRef = useRef(JSON.stringify(entity?.data || {}));
+
+  useEffect(() => {
+    const data = entity?.data || {};
+    setDraft(data);
+    initialRef.current = JSON.stringify(data);
+  }, [entity]);
+
+  if (!entity) return null;
+  const dirty = JSON.stringify(draft) !== initialRef.current;
+  const close = () => {
+    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    onClose();
+  };
+
+  return (
+    <SheetShell title={draft?.name || "Trap Sheet"} subtitle="Trigger, effects, DC, and damage" dirty={dirty} onSave={() => onSave(draft)} onClose={close}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
+        <div><div style={sheetLabelStyle}>Name</div><input value={draft.name || ""} onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value }))} style={sheetInputStyle} /></div>
+        <div><div style={sheetLabelStyle}>Type</div><select value={draft.type || "mechanical"} onChange={(e) => setDraft((p) => ({ ...p, type: e.target.value }))} style={sheetInputStyle}>{["mechanical", "magical", "natural", "hybrid"].map((v) => <option key={v} value={v}>{v}</option>)}</select></div>
+        <div><div style={sheetLabelStyle}>Severity</div><select value={draft.severity || "dangerous"} onChange={(e) => setDraft((p) => ({ ...p, severity: e.target.value }))} style={sheetInputStyle}>{["setback", "dangerous", "deadly"].map((v) => <option key={v} value={v}>{v}</option>)}</select></div>
+        <div><div style={sheetLabelStyle}>Trigger</div><input value={draft.trigger || ""} onChange={(e) => setDraft((p) => ({ ...p, trigger: e.target.value }))} style={sheetInputStyle} /></div>
+        <div style={{ gridColumn: "1 / -1" }}><div style={sheetLabelStyle}>Effect</div><textarea value={draft.effect || ""} onChange={(e) => setDraft((p) => ({ ...p, effect: e.target.value }))} style={{ ...sheetInputStyle, minHeight: 80 }} /></div>
+        <div><div style={sheetLabelStyle}>Save Ability</div><select value={draft.save?.ability || "dex"} onChange={(e) => setDraft((p) => ({ ...p, save: { ...p.save, ability: e.target.value } }))} style={sheetInputStyle}>{SRD_RULESET.reference.abilities.map((v) => <option key={v} value={v}>{v.toUpperCase()}</option>)}</select></div>
+        <div><div style={sheetLabelStyle}>Save DC</div><input type="number" value={toNumber(draft.save?.dc, 12)} onChange={(e) => setDraft((p) => ({ ...p, save: { ...p.save, dc: clamp(toNumber(e.target.value, 12), 1, 30) } }))} style={sheetInputStyle} /></div>
+        <div><div style={sheetLabelStyle}>Damage Dice</div><input value={draft.damage?.dice || ""} onChange={(e) => setDraft((p) => ({ ...p, damage: { ...p.damage, dice: e.target.value } }))} style={sheetInputStyle} /></div>
+        <div><div style={sheetLabelStyle}>Damage Type</div><select value={draft.damage?.type || "piercing"} onChange={(e) => setDraft((p) => ({ ...p, damage: { ...p.damage, type: e.target.value } }))} style={sheetInputStyle}>{SRD_RULESET.reference.damage_types.map((v) => <option key={v} value={v}>{v}</option>)}</select></div>
+        <div><div style={sheetLabelStyle}>Attack Bonus</div><input type="number" value={toNumber(draft.attack_bonus, 0)} onChange={(e) => setDraft((p) => ({ ...p, attack_bonus: toNumber(e.target.value, 0) }))} style={sheetInputStyle} /></div>
+      </div>
+    </SheetShell>
+  );
+}
+
+function FactionSheet({ entity, onSave, onClose }) {
+  return (
+    <GenericEntitySheet
+      entity={entity}
+      onSave={onSave}
+      onClose={onClose}
+      title={entity?.data?.name || "Faction Sheet"}
+      subtitle="Members, goals, resources, and relationships"
+      fields={[
+        { key: "name", label: "Name" },
+        { key: "type", label: "Type", type: "select", options: ["guild", "cult", "government", "military", "mercenary", "religious", "criminal", "arcane", "noble_house"] },
+        { key: "alignment_tendency", label: "Alignment Tendency" },
+        { key: "motto", label: "Motto" },
+        { key: "description", label: "Description", multiline: true },
+        { key: "goals", label: "Goals (JSON)", multiline: true, json: true, defaultValue: [] },
+        { key: "methods", label: "Methods", type: "csv" },
+        { key: "hierarchy", label: "Hierarchy (JSON)", multiline: true, json: true, defaultValue: [] },
+        { key: "resources", label: "Resources (JSON)", multiline: true, json: true, defaultValue: [] },
+        { key: "allies", label: "Allies (JSON)", multiline: true, json: true, defaultValue: [] },
+        { key: "enemies", label: "Enemies (JSON)", multiline: true, json: true, defaultValue: [] },
+      ]}
+    />
+  );
+}
+
+function LootSheet({ entity, onSave, onClose }) {
+  const [draft, setDraft] = useState(entity?.data || {});
+  const initialRef = useRef(JSON.stringify(entity?.data || {}));
+
+  useEffect(() => {
+    const data = entity?.data || {};
+    setDraft(data);
+    initialRef.current = JSON.stringify(data);
+  }, [entity]);
+
+  if (!entity) return null;
+  const dirty = JSON.stringify(draft) !== initialRef.current;
+  const close = () => {
+    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    onClose();
+  };
+
+  return (
+    <SheetShell title={draft.name || "Loot Sheet"} subtitle="Items, coins, rarity, and magic properties" dirty={dirty} onSave={() => onSave(draft)} onClose={close}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
+        <div><div style={sheetLabelStyle}>Name</div><input value={draft.name || ""} onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value }))} style={sheetInputStyle} /></div>
+        <div><div style={sheetLabelStyle}>Category</div><select value={draft.category || "wondrous"} onChange={(e) => setDraft((p) => ({ ...p, category: e.target.value }))} style={sheetInputStyle}>{SRD_RULESET.reference.item_categories.map((v) => <option key={v} value={v}>{v}</option>)}</select></div>
+        <div><div style={sheetLabelStyle}>Rarity</div><select value={draft.rarity || "common"} onChange={(e) => setDraft((p) => ({ ...p, rarity: e.target.value }))} style={sheetInputStyle}>{SRD_RULESET.reference.item_rarities.map((v) => <option key={v} value={v}>{v}</option>)}</select></div>
+        <div><div style={sheetLabelStyle}>Attunement Required</div><select value={String(!!draft.attunement?.required)} onChange={(e) => setDraft((p) => ({ ...p, attunement: { ...(p.attunement || {}), required: e.target.value === "true" } }))} style={sheetInputStyle}><option value="false">No</option><option value="true">Yes</option></select></div>
+        <div style={{ gridColumn: "1 / -1" }}><div style={sheetLabelStyle}>Description</div><textarea value={draft.description || ""} onChange={(e) => setDraft((p) => ({ ...p, description: e.target.value }))} style={{ ...sheetInputStyle, minHeight: 80 }} /></div>
+        <div style={{ gridColumn: "1 / -1" }}><div style={sheetLabelStyle}>Properties (comma-separated)</div><input value={toCsv(draft.properties)} onChange={(e) => setDraft((p) => ({ ...p, properties: parseCsv(e.target.value) }))} style={sheetInputStyle} /></div>
+        <div><div style={sheetLabelStyle}>Gold Value (gp)</div><input type="number" value={toNumber(draft.value?.gp, 0)} onChange={(e) => setDraft((p) => ({ ...p, value: { ...(p.value || {}), gp: clamp(toNumber(e.target.value, 0), 0, 1000000) } }))} style={sheetInputStyle} /></div>
+        <div><div style={sheetLabelStyle}>Weight</div><input type="number" value={toNumber(draft.weight, 0)} onChange={(e) => setDraft((p) => ({ ...p, weight: toNumber(e.target.value, 0) }))} style={sheetInputStyle} /></div>
+        <div style={{ gridColumn: "1 / -1" }}><div style={sheetLabelStyle}>Lore</div><textarea value={draft.lore || ""} onChange={(e) => setDraft((p) => ({ ...p, lore: e.target.value }))} style={{ ...sheetInputStyle, minHeight: 80 }} /></div>
+      </div>
+    </SheetShell>
+  );
+}
+
+function RollTableSheet({ entity, onSave, onClose }) {
+  const [draft, setDraft] = useState(entity?.data || {});
+  const initialRef = useRef(JSON.stringify(entity?.data || {}));
+
+  useEffect(() => {
+    const data = entity?.data || {};
+    const next = {
+      name: data.name || "",
+      dice: data.dice || "d20",
+      entries: Array.isArray(data.entries) ? data.entries : [],
+      tags: data.tags || [],
+      source: data.source || "",
+      reroll_duplicates: !!data.reroll_duplicates,
+      cascade: !!data.cascade,
+    };
+    setDraft(next);
+    initialRef.current = JSON.stringify(next);
+  }, [entity]);
+
+  if (!entity) return null;
+  const dirty = JSON.stringify(draft) !== initialRef.current;
+  const close = () => {
+    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    onClose();
+  };
+
+  return (
+    <SheetShell title={draft.name || "Roll Table Sheet"} subtitle="Dice notation and weighted result entries" dirty={dirty} onSave={() => onSave(draft)} onClose={close}>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div><div style={sheetLabelStyle}>Name</div><input value={draft.name || ""} onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value }))} style={sheetInputStyle} /></div>
+        <div><div style={sheetLabelStyle}>Dice</div><input value={draft.dice || "d20"} onChange={(e) => setDraft((p) => ({ ...p, dice: e.target.value }))} style={sheetInputStyle} /></div>
+        <div><div style={sheetLabelStyle}>Source</div><input value={draft.source || ""} onChange={(e) => setDraft((p) => ({ ...p, source: e.target.value }))} style={sheetInputStyle} /></div>
+      </div>
+
+      <ObjectListEditor
+        title="Entries"
+        items={draft.entries}
+        onChange={(entries) => setDraft((p) => ({ ...p, entries }))}
+        fields={[
+          { key: "range_min", label: "Min", type: "number" },
+          { key: "range_max", label: "Max", type: "number" },
+          { key: "result", label: "Result" },
+        ]}
+      />
+
+      <div style={{ marginTop: 10 }}>
+        <div style={sheetLabelStyle}>Tags (comma-separated)</div>
+        <input value={toCsv(draft.tags)} onChange={(e) => setDraft((p) => ({ ...p, tags: parseCsv(e.target.value) }))} style={sheetInputStyle} />
+      </div>
+      <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+          <input type="checkbox" checked={!!draft.reroll_duplicates} onChange={(e) => setDraft((p) => ({ ...p, reroll_duplicates: e.target.checked }))} />
+          Reroll duplicates
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+          <input type="checkbox" checked={!!draft.cascade} onChange={(e) => setDraft((p) => ({ ...p, cascade: e.target.checked }))} />
+          Cascade results
+        </label>
+      </div>
+    </SheetShell>
+  );
+}
+
+function AssetEditorModal({ entity, onSave, onClose }) {
+  if (!entity) return null;
+  const type = entity.type;
+  const sheetProps = { entity, onSave, onClose };
+  const fallbackSchemaFields = Object.keys(CORE_ENTITY_TYPES[type]?.schema || {}).map((key) => ({ key, label: key.replace(/_/g, " "), multiline: true }));
+
+  const sheetByType = {
+    creature: <CreatureSheet {...sheetProps} />,
+    encounter: <EncounterSheet {...sheetProps} />,
+    dungeon: <DungeonSheet {...sheetProps} />,
+    location: <LocationSheet {...sheetProps} />,
+    trap: <TrapSheet {...sheetProps} />,
+    faction: <FactionSheet {...sheetProps} />,
+    loot: <LootSheet {...sheetProps} />,
+    roll_table: <RollTableSheet {...sheetProps} />,
+  };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(5,5,8,0.86)", zIndex: 120, display: "flex", justifyContent: "center", alignItems: "center", padding: 14 }}
+    >
+      {sheetByType[type] || (
+        <GenericEntitySheet
+          entity={entity}
+          onSave={onSave}
+          onClose={onClose}
+          title={entity?.data?.name || "Asset Sheet"}
+          subtitle="Generic editor fallback"
+          fields={fallbackSchemaFields}
+        />
+      )}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════
 // MAIN APPLICATION
 // ═══════════════════════════════════════════════════════════
@@ -352,6 +1101,7 @@ export default function EntityForge() {
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderColor, setNewFolderColor] = useState("#D4A843");
   const [panel, setPanel] = useState("palette");
+  const [activeAssetId, setActiveAssetId] = useState(null);
   const [paletteTab, setPaletteTab] = useState("entities");
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
@@ -887,7 +1637,10 @@ Respond with ONLY the JSON object.`;
     setCustomAiGenerating(true);
     setError(null);
     try {
-      const system = 'Generate a JSON schema for a custom Entity Forge node. Output ONLY the schema object matching this format: { properties: { fieldName: { type: "string"|"number"|"boolean"|"array", description: "...", enum?: [...] } } }';
+      const system = `Generate a JSON schema for a custom Entity Forge node.
+Output ONLY the schema object matching this format: { properties: { fieldName: { type: "string"|"number"|"boolean"|"array", description: "...", enum?: [...] } } }.
+Reference existing asset sheet schemas for consistency:
+${JSON.stringify(ASSET_SHEET_SCHEMAS, null, 2)}`;
       const { provider, data } = await callLlm({
         system,
         user: userMsg,
@@ -981,6 +1734,26 @@ Respond with ONLY the JSON object.`;
   const deleteEntity = async (entityId) => {
     const updated = savedEntities.filter((e) => e.id !== entityId);
     await persistEntities(updated);
+    if (activeAssetId === entityId) setActiveAssetId(null);
+  };
+
+  const openAssetEditor = (entityId) => {
+    setActiveAssetId(entityId);
+  };
+
+  const closeAssetEditor = () => {
+    setActiveAssetId(null);
+  };
+
+  const saveAssetEntity = async (updatedData) => {
+    if (!activeAssetId) return;
+    const next = savedEntities.map((ent) => (
+      ent.id === activeAssetId
+        ? { ...ent, data: updatedData, updatedAt: new Date().toISOString() }
+        : ent
+    ));
+    await persistEntities(next);
+    setActiveAssetId(null);
   };
 
   const clearCanvas = () => { setNodes([]); setConnections([]); setSelectedNode(null); setContextPrompts({}); setRollResults({}); setLockedRolls({}); };
@@ -1008,6 +1781,7 @@ Respond with ONLY the JSON object.`;
     ? savedEntities
     : savedEntities.filter((ent) => (ent.folderIds || []).includes(folderFilter));
   const modelOptions = apiProvider === "openai" ? OPENAI_MODELS : ANTHROPIC_MODELS;
+  const activeAssetEntity = savedEntities.find((ent) => ent.id === activeAssetId) || null;
 
   // ═══════════════════════════════════════════════════════════
   // RENDER
@@ -1104,7 +1878,7 @@ Respond with ONLY the JSON object.`;
 
         {/* Main Tabs */}
         <div style={{ display: "flex", borderBottom: "1px solid #1E1E2E" }}>
-          {[{ id: "palette", label: "Nodes" }, { id: "saved", label: "Vault" }, { id: "orch", label: "Orch" }].map((t) => (
+          {[{ id: "palette", label: "Nodes" }, { id: "assets", label: "Assets" }, { id: "orch", label: "Orch" }].map((t) => (
             <div key={t.id} className="tab-btn" onClick={() => setPanel(t.id)}
               style={{ flex: 1, padding: "8px 0", textAlign: "center", fontSize: 11, fontWeight: 600, letterSpacing: 0.5, color: panel === t.id ? "#D4A843" : "#6a6a7a", borderBottom: panel === t.id ? "2px solid #D4A843" : "2px solid transparent" }}>
               {t.label}
@@ -1217,8 +1991,8 @@ Respond with ONLY the JSON object.`;
             </div>
           )}
 
-          {/* ── VAULT ── */}
-          {panel === "saved" && (
+          {/* ── ASSETS ── */}
+          {panel === "assets" && (
             <div>
               <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: 1.5, color: "#444", marginBottom: 6, fontWeight: 600 }}>
                 Saved Entities ({filteredSavedEntities.length}/{savedEntities.length})
@@ -1260,7 +2034,7 @@ Respond with ONLY the JSON object.`;
                 </div>
               )}
 
-              {savedEntities.length === 0 && <div style={{ fontSize: 11, color: "#4a4a5a", padding: 8 }}>Generate and save entities to your vault.</div>}
+              {savedEntities.length === 0 && <div style={{ fontSize: 11, color: "#4a4a5a", padding: 8 }}>Generate and save entities to your assets.</div>}
               {savedEntities.length > 0 && filteredSavedEntities.length === 0 && (
                 <div style={{ fontSize: 11, color: "#4a4a5a", padding: 8 }}>No entities found for this folder.</div>
               )}
@@ -1269,11 +2043,17 @@ Respond with ONLY the JSON object.`;
                 const et = entityTypes[ent.type];
                 const assignedFolders = folders.filter((folder) => (ent.folderIds || []).includes(folder.id));
                 return (
-                  <div key={ent.id} className="entity-btn" style={{ background: "#16162250", borderRadius: 7, padding: "8px 10px", marginBottom: 4 }}>
+                  <div key={ent.id} className="entity-btn" onClick={() => openAssetEditor(ent.id)} style={{ background: "#16162250", borderRadius: 7, padding: "8px 10px", marginBottom: 4 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
                       <span style={{ fontSize: 12 }}>{et?.icon}</span>
                       <span style={{ fontSize: 11, fontWeight: 600, color: et?.accent }}>{ent.data?.name || et?.name}</span>
-                      <span onClick={() => deleteEntity(ent.id)} style={{ marginLeft: "auto", fontSize: 9, color: "#C44536", cursor: "pointer" }}>✕</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openAssetEditor(ent.id); }}
+                        style={{ marginLeft: "auto", border: "1px solid #D4A84340", background: "#D4A84318", color: "#D4A843", borderRadius: 4, padding: "2px 8px", fontSize: 9, cursor: "pointer" }}
+                      >
+                        Edit
+                      </button>
+                      <span onClick={(e) => { e.stopPropagation(); deleteEntity(ent.id); }} style={{ fontSize: 9, color: "#C44536", cursor: "pointer" }}>✕</span>
                     </div>
                     <div style={{ fontSize: 8, color: "#555", marginBottom: 4 }}>
                       {ent.savedAt ? new Date(ent.savedAt).toLocaleString() : "Unknown save date"}
@@ -1294,7 +2074,7 @@ Respond with ONLY the JSON object.`;
                         {folders.map((folder) => {
                           const active = (ent.folderIds || []).includes(folder.id);
                           return (
-                            <span key={folder.id} onClick={() => toggleEntityFolder(ent.id, folder.id)}
+                            <span key={folder.id} onClick={(e) => { e.stopPropagation(); toggleEntityFolder(ent.id, folder.id); }}
                               style={{ padding: "1px 6px", borderRadius: 4, fontSize: 9, cursor: "pointer", background: active ? `${folder.color}22` : "#1a1a24", border: `1px solid ${active ? folder.color : "#2a2a3a"}`, color: active ? folder.color : "#6a6a7a" }}>
                               {active ? "✓ " : "+ "}{folder.name}
                             </span>
@@ -1631,6 +2411,13 @@ Respond with ONLY the JSON object.`;
           </div>
         </div>
       )}
+
+      {/* ═══ ASSET EDITOR MODAL ═══ */}
+      <AssetEditorModal
+        entity={activeAssetEntity}
+        onSave={saveAssetEntity}
+        onClose={closeAssetEditor}
+      />
 
       {/* ═══ CUSTOM NODE BUILDER MODAL ═══ */}
       {showCustomBuilder && (
