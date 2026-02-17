@@ -62,6 +62,7 @@ const CORE_ENTITY_TYPES = {
     color: "#C44536",
     accent: "#E8785F",
     description: "SRD stat block — monster, NPC, boss, or companion",
+    nodeClass: "content",
     acceptsInputs: ["loot", "roll_table"],
     schema: {
       name: "string", role: "enum: monster|npc|boss|minion|companion",
@@ -94,6 +95,7 @@ const CORE_ENTITY_TYPES = {
     color: "#D4A843",
     accent: "#F0D080",
     description: "SRD encounter — combat, social, exploration, or puzzle",
+    nodeClass: "content",
     acceptsInputs: ["creature", "location", "trap", "loot", "roll_table"],
     schema: {
       name: "string", type: "enum: combat|social|exploration|puzzle|trap|mixed",
@@ -116,6 +118,7 @@ const CORE_ENTITY_TYPES = {
     color: "#6B5B95",
     accent: "#A094C7",
     description: "Multi-room environment with encounters, traps, and treasure",
+    nodeClass: "content",
     acceptsInputs: ["creature", "encounter", "trap", "loot", "roll_table"],
     schema: {
       name: "string", theme: "string", level_range: "string (e.g., 3-5)",
@@ -136,6 +139,7 @@ const CORE_ENTITY_TYPES = {
     color: "#3D7EA6",
     accent: "#6CB4D9",
     description: "Settlement, wilderness, ruin, or point of interest",
+    nodeClass: "content",
     acceptsInputs: ["creature", "dungeon", "faction", "roll_table"],
     schema: {
       name: "string", type: "enum: city|town|village|hamlet|wilderness|ruin|landmark|planar",
@@ -155,6 +159,7 @@ const CORE_ENTITY_TYPES = {
     color: "#B5651D",
     accent: "#D9A066",
     description: "SRD trap — mechanical, magical, or natural hazard",
+    nodeClass: "content",
     acceptsInputs: ["roll_table"],
     schema: {
       name: "string", type: "enum: mechanical|magical|natural|hybrid",
@@ -175,6 +180,7 @@ const CORE_ENTITY_TYPES = {
     color: "#4A6741",
     accent: "#7DA874",
     description: "Organization with hierarchy, goals, and influence",
+    nodeClass: "content",
     acceptsInputs: ["creature", "location", "roll_table"],
     schema: {
       name: "string",
@@ -197,6 +203,7 @@ const CORE_ENTITY_TYPES = {
     color: "#C9A227",
     accent: "#E8D06F",
     description: "SRD magic item or treasure with rarity and properties",
+    nodeClass: "content",
     acceptsInputs: ["roll_table"],
     schema: {
       name: "string",
@@ -209,6 +216,161 @@ const CORE_ENTITY_TYPES = {
       weight: "number?", source_context: "string?",
     },
   },
+  npc: {
+    id: "npc",
+    name: "NPC",
+    icon: "🗣️",
+    color: "#8E5B3A",
+    accent: "#D2A679",
+    description: "Roleplay-centric non-player character profile",
+    nodeClass: "content",
+    acceptsInputs: ["location", "faction", "quest", "plot_hook", "roll_table"],
+    schema: {
+      name: "string",
+      race: "string",
+      class: "string",
+      level: "number",
+      age: "string",
+      gender: "string",
+      personality: "{ traits: string[], ideals: string[], bonds: string[], flaws: string[] }",
+      motivation: "string",
+      goals: "string[]",
+      secrets: "string[]",
+      relationships: "{ allies: string[], enemies: string[], family: string[] }",
+      occupation: "string",
+      social_status: "string",
+      voice_mannerisms: "string",
+      appearance: "string",
+      quest_hooks: "string[]",
+      stats_lite: "{ ac, hp, speed, str, dex, con, int, wis, cha, skills?: string[] }",
+    },
+  },
+  quest: {
+    id: "quest",
+    name: "Quest/Mission",
+    icon: "🧭",
+    color: "#4D6C8A",
+    accent: "#8CB4D8",
+    description: "Structured mission with objectives, rewards, and outcomes",
+    nodeClass: "content",
+    acceptsInputs: ["npc", "location", "dungeon", "encounter", "faction", "plot_hook", "magic_item", "random_event", "roll_table"],
+    schema: {
+      title: "string",
+      type: "enum: main|side|personal",
+      giver: "{ npc_ref, name }",
+      objectives: "{ order, objective, optional? }[]",
+      rewards: "{ xp, gold, items[], reputation }",
+      complications: "string[]",
+      success_conditions: "string[]",
+      failure_conditions: "string[]",
+      time_limit: "string?",
+      prerequisites: "string[]",
+      level_range: "string",
+    },
+  },
+  plot_hook: {
+    id: "plot_hook",
+    name: "Plot Hook",
+    icon: "🪝",
+    color: "#A04A6A",
+    accent: "#D98CA9",
+    description: "Inciting incident that drives players into action",
+    nodeClass: "content",
+    acceptsInputs: ["npc", "location", "faction", "random_event", "roll_table"],
+    schema: {
+      title: "string",
+      hook_text: "string",
+      type: "enum: mystery|combat|social|exploration",
+      urgency_level: "enum: low|medium|high|critical",
+      npcs_involved: "{ name, role }[]",
+      leads_to: "{ target_type, target_ref, description }[]",
+      foreshadowing: "string[]",
+    },
+  },
+  magic_item: {
+    id: "magic_item",
+    name: "Magic Item",
+    icon: "✨",
+    color: "#2F7E79",
+    accent: "#74C9C0",
+    description: "Magic item profile with rarity, effects, and lore",
+    nodeClass: "content",
+    acceptsInputs: ["quest", "dungeon", "location", "faction", "roll_table"],
+    schema: {
+      name: "string",
+      rarity: "enum: common|uncommon|rare|very_rare|legendary|artifact",
+      item_type: "enum: weapon|armor|wondrous|potion|scroll",
+      attunement_required: "boolean",
+      properties_effects: "string[]",
+      charges_uses: "{ max, recharge, current? }?",
+      curse: "{ has_curse: boolean, description?: string }?",
+      lore_history: "string",
+    },
+  },
+  random_event: {
+    id: "random_event",
+    name: "Random Event",
+    icon: "⛈️",
+    color: "#5A5F84",
+    accent: "#9CA3D6",
+    description: "Dynamic event that can alter world state",
+    nodeClass: "content",
+    acceptsInputs: ["location", "npc", "creature", "faction", "roll_table"],
+    schema: {
+      name: "string",
+      event_description: "string",
+      trigger_conditions: "string[]",
+      consequences: "string[]",
+      duration: "string",
+      affected_area: "string",
+      entities_involved: "{ type, ref, name }[]",
+    },
+  },
+  context: {
+    id: "context",
+    name: "Context Node",
+    icon: "🎯",
+    color: "#7B4CC9",
+    accent: "#C1A1F5",
+    description: "Campaign markdown notes for AI Orchestrator to parse and use",
+    nodeClass: "control",
+    acceptsInputs: [],
+    schema: {
+      markdown: "string",
+    },
+    isControl: true,
+    isSource: true,
+  },
+  ai_orchestrator: {
+    id: "ai_orchestrator",
+    name: "AI Orchestrator",
+    icon: "🧠",
+    color: "#2F6ED1",
+    accent: "#8CB8FF",
+    description: "Generates an interconnected sub-graph from a design brief",
+    nodeClass: "control",
+    acceptsInputs: ["context"],
+    schema: {
+      brief: "string",
+      output_scope: "string?",
+    },
+    isControl: true,
+  },
+  table_expander: {
+    id: "table_expander",
+    name: "Table Expander",
+    icon: "🌳",
+    color: "#2F8B57",
+    accent: "#7ED7A4",
+    description: "Expands each roll-table entry into generated entity nodes",
+    nodeClass: "control",
+    acceptsInputs: ["roll_table", "context"],
+    schema: {
+      strategy: "string?",
+      preferred_types: "string[]?",
+    },
+    isControl: true,
+  },
   roll_table: {
     id: "roll_table",
     name: "Roll Table",
@@ -216,6 +378,7 @@ const CORE_ENTITY_TYPES = {
     color: "#9B59B6",
     accent: "#C39BD3",
     description: "Randomized input — dice-driven results feeding other nodes",
+    nodeClass: "table",
     acceptsInputs: [],
     schema: {
       name: "string", dice: "string (e.g., d20, 2d6, d100)",
@@ -303,6 +466,7 @@ const SRD_ROLL_TABLES = [
 
 const ANTHROPIC_MODELS = ["claude-opus-4-6", "claude-sonnet-4-5", "claude-haiku-4"];
 const OPENAI_MODELS = ["gpt-4o", "gpt-4o-mini", "o1", "o1-mini"];
+const CONTROL_NODE_TYPES = new Set(["context", "ai_orchestrator", "table_expander"]);
 
 // ═══════════════════════════════════════════════════════════
 // HELPERS
@@ -310,8 +474,22 @@ const OPENAI_MODELS = ["gpt-4o", "gpt-4o-mini", "o1", "o1-mini"];
 const genId = () => Math.random().toString(36).substr(2, 9);
 
 function canConnect(sourceType, targetType, entityTypes) {
+  if (sourceType === targetType) return false;
   const target = entityTypes[targetType];
-  return target && target.acceptsInputs.includes(sourceType);
+  const source = entityTypes[sourceType];
+  if (!target || !source) return false;
+  if (target.acceptsInputs.includes(sourceType)) return true;
+
+  // Context can constrain any content or control generator node.
+  if (sourceType === "context" && (target.nodeClass === "content" || targetType === "ai_orchestrator" || targetType === "table_expander")) {
+    return true;
+  }
+  // Orchestrator can seed most content nodes directly.
+  if (sourceType === "ai_orchestrator" && target.nodeClass === "content") return true;
+  // Table expander emits concrete content entities.
+  if (sourceType === "table_expander" && target.nodeClass === "content") return true;
+
+  return false;
 }
 
 function topologicalSort(nodes, connections) {
@@ -787,6 +965,11 @@ function GenericEntitySheet({ entity, onSave, onClose, title, subtitle, fields }
               <select value={draft[field.key] || field.options?.[0] || ""} onChange={(e) => setField(field.key, e.target.value)} style={sheetInputStyle}>
                 {(field.options || []).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
               </select>
+            ) : field.type === "boolean" ? (
+              <select value={String(!!draft[field.key])} onChange={(e) => setField(field.key, e.target.value === "true")} style={sheetInputStyle}>
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
             ) : field.type === "csv" ? (
               <input value={toCsv(draft[field.key])} onChange={(e) => setField(field.key, parseCsv(e.target.value))} style={sheetInputStyle} />
             ) : (
@@ -884,6 +1067,126 @@ function LocationSheet({ entity, onSave, onClose }) {
         { key: "rumors", label: "Rumors (JSON)", multiline: true, json: true, defaultValue: [] },
         { key: "dangers", label: "Dangers", type: "csv" },
         { key: "history", label: "History", multiline: true },
+      ]}
+    />
+  );
+}
+
+function NpcSheet({ entity, onSave, onClose }) {
+  return (
+    <GenericEntitySheet
+      entity={entity}
+      onSave={onSave}
+      onClose={onClose}
+      title={entity?.data?.name || "NPC Sheet"}
+      subtitle="Roleplay-focused NPC profile with motivations and hooks"
+      fields={[
+        { key: "name", label: "Name" },
+        { key: "race", label: "Race" },
+        { key: "class", label: "Class" },
+        { key: "level", label: "Level", type: "number", defaultValue: 1 },
+        { key: "age", label: "Age" },
+        { key: "gender", label: "Gender" },
+        { key: "personality", label: "Personality (JSON)", multiline: true, json: true, defaultValue: { traits: [], ideals: [], bonds: [], flaws: [] } },
+        { key: "motivation", label: "Motivation", multiline: true },
+        { key: "goals", label: "Goals", type: "csv" },
+        { key: "secrets", label: "Secrets", type: "csv" },
+        { key: "relationships", label: "Relationships (JSON)", multiline: true, json: true, defaultValue: { allies: [], enemies: [], family: [] } },
+        { key: "occupation", label: "Occupation" },
+        { key: "social_status", label: "Social Status" },
+        { key: "voice_mannerisms", label: "Voice / Mannerisms", multiline: true },
+        { key: "appearance", label: "Appearance", multiline: true },
+        { key: "quest_hooks", label: "Quest Hooks", type: "csv" },
+        { key: "stats_lite", label: "Lite Stats (JSON)", multiline: true, json: true, defaultValue: {} },
+      ]}
+    />
+  );
+}
+
+function QuestSheet({ entity, onSave, onClose }) {
+  return (
+    <GenericEntitySheet
+      entity={entity}
+      onSave={onSave}
+      onClose={onClose}
+      title={entity?.data?.title || "Quest / Mission Sheet"}
+      subtitle="Objectives, rewards, and success/failure stakes"
+      fields={[
+        { key: "title", label: "Title" },
+        { key: "type", label: "Type", type: "select", options: ["main", "side", "personal"] },
+        { key: "giver", label: "Giver (JSON)", multiline: true, json: true, defaultValue: {} },
+        { key: "objectives", label: "Objectives (JSON)", multiline: true, json: true, defaultValue: [] },
+        { key: "rewards", label: "Rewards (JSON)", multiline: true, json: true, defaultValue: {} },
+        { key: "complications", label: "Complications / Twists", type: "csv" },
+        { key: "success_conditions", label: "Success Conditions", type: "csv" },
+        { key: "failure_conditions", label: "Failure Conditions", type: "csv" },
+        { key: "time_limit", label: "Time Limit" },
+        { key: "prerequisites", label: "Prerequisites", type: "csv" },
+        { key: "level_range", label: "Level Range" },
+      ]}
+    />
+  );
+}
+
+function PlotHookSheet({ entity, onSave, onClose }) {
+  return (
+    <GenericEntitySheet
+      entity={entity}
+      onSave={onSave}
+      onClose={onClose}
+      title={entity?.data?.title || "Plot Hook Sheet"}
+      subtitle="Inciting incident and downstream leads"
+      fields={[
+        { key: "title", label: "Title" },
+        { key: "hook_text", label: "Hook Text", multiline: true },
+        { key: "type", label: "Type", type: "select", options: ["mystery", "combat", "social", "exploration"] },
+        { key: "urgency_level", label: "Urgency", type: "select", options: ["low", "medium", "high", "critical"] },
+        { key: "npcs_involved", label: "NPCs Involved (JSON)", multiline: true, json: true, defaultValue: [] },
+        { key: "leads_to", label: "Leads To (JSON)", multiline: true, json: true, defaultValue: [] },
+        { key: "foreshadowing", label: "Foreshadowing", type: "csv" },
+      ]}
+    />
+  );
+}
+
+function MagicItemSheet({ entity, onSave, onClose }) {
+  return (
+    <GenericEntitySheet
+      entity={entity}
+      onSave={onSave}
+      onClose={onClose}
+      title={entity?.data?.name || "Magic Item Sheet"}
+      subtitle="Rarity, attunement, effects, and lore"
+      fields={[
+        { key: "name", label: "Name" },
+        { key: "rarity", label: "Rarity", type: "select", options: SRD_RULESET.reference.item_rarities },
+        { key: "item_type", label: "Item Type", type: "select", options: ["weapon", "armor", "wondrous", "potion", "scroll"] },
+        { key: "attunement_required", label: "Attunement Required", type: "boolean" },
+        { key: "properties_effects", label: "Properties / Effects", type: "csv" },
+        { key: "charges_uses", label: "Charges / Uses (JSON)", multiline: true, json: true, defaultValue: {} },
+        { key: "curse", label: "Curse (JSON)", multiline: true, json: true, defaultValue: { has_curse: false } },
+        { key: "lore_history", label: "Lore / History", multiline: true },
+      ]}
+    />
+  );
+}
+
+function RandomEventSheet({ entity, onSave, onClose }) {
+  return (
+    <GenericEntitySheet
+      entity={entity}
+      onSave={onSave}
+      onClose={onClose}
+      title={entity?.data?.name || "Random Event Sheet"}
+      subtitle="Triggers, effects, and impacted entities"
+      fields={[
+        { key: "name", label: "Name" },
+        { key: "event_description", label: "Event Description", multiline: true },
+        { key: "trigger_conditions", label: "Trigger Conditions", type: "csv" },
+        { key: "consequences", label: "Consequences", type: "csv" },
+        { key: "duration", label: "Duration" },
+        { key: "affected_area", label: "Affected Area" },
+        { key: "entities_involved", label: "NPCs / Creatures Involved (JSON)", multiline: true, json: true, defaultValue: [] },
       ]}
     />
   );
@@ -1057,6 +1360,11 @@ function AssetEditorModal({ entity, onSave, onClose }) {
     encounter: <EncounterSheet {...sheetProps} />,
     dungeon: <DungeonSheet {...sheetProps} />,
     location: <LocationSheet {...sheetProps} />,
+    npc: <NpcSheet {...sheetProps} />,
+    quest: <QuestSheet {...sheetProps} />,
+    plot_hook: <PlotHookSheet {...sheetProps} />,
+    magic_item: <MagicItemSheet {...sheetProps} />,
+    random_event: <RandomEventSheet {...sheetProps} />,
     trap: <TrapSheet {...sheetProps} />,
     faction: <FactionSheet {...sheetProps} />,
     loot: <LootSheet {...sheetProps} />,
@@ -1203,6 +1511,9 @@ export default function EntityForge() {
     const cx = 300 + Math.random() * 200 - canvasOffset.x;
     const cy = 200 + Math.random() * 200 - canvasOffset.y;
     const node = { id: genId(), type: typeId, x: cx, y: cy, result: null };
+    if (typeId === "context") {
+      node.result = { theme: "", tone: "", setting: "", power_level: "", restrictions: [] };
+    }
     setNodes((prev) => [...prev, node]);
     // If roll table, pre-populate with empty table
     if (typeId === "roll_table") {
@@ -1234,6 +1545,35 @@ export default function EntityForge() {
   };
 
   const removeConnection = (connId) => setConnections((p) => p.filter((c) => c.id !== connId));
+  const setNodeResult = (nodeId, value) => setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, result: value } : n)));
+
+  const collectUpstreamNodes = (startId) => {
+    const visited = new Set();
+    const stack = [startId];
+    const upstream = [];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      const incoming = connections.filter((c) => c.target === current);
+      incoming.forEach((c) => {
+        if (visited.has(c.source)) return;
+        visited.add(c.source);
+        const src = nodes.find((n) => n.id === c.source);
+        if (!src) return;
+        upstream.push(src);
+        stack.push(src.id);
+      });
+    }
+    return upstream;
+  };
+
+  const getContextConstraints = (nodeId) => {
+    const contexts = collectUpstreamNodes(nodeId)
+      .filter((n) => n.type === "context")
+      .map((n) => n.result?.markdown)
+      .filter((md) => md && md.trim());
+    if (contexts.length === 0) return null;
+    return contexts.join("\n\n---\n\n");
+  };
 
   // ── Dragging & Panning ──
   const handleNodeMouseDown = (nodeId, e) => {
@@ -1474,6 +1814,7 @@ Use the standard CR/XP table for challenge ratings.`;
       : "";
 
     const nodeDirective = getNodeDirective(node, orchestrationPlan);
+    const contextConstraints = getContextConstraints(node.id);
     const orchestrationContext = orchestrationPlan
       ? `\n\nOrchestration plan to incorporate:
 Theme: ${orchestrationPlan.theme || "n/a"}
@@ -1482,12 +1823,18 @@ Narrative threads: ${(orchestrationPlan.narrative_threads || []).join(" | ") || 
 Mechanical notes: ${orchestrationPlan.mechanical_notes || "n/a"}
 Node directive: ${nodeDirective || "n/a"}`
       : "";
+    const contextBlock = contextConstraints
+      ? `\n\nCampaign context (from Context nodes):
+${contextConstraints}
+
+Use this context to inform your generation.`
+      : "";
 
     const userPrompt = `Generate a D&D 5e ${et.name} as a JSON object.
 
 Required JSON schema:
 ${JSON.stringify(et.schema, null, 2)}
-${inputContext}${rollContext}${orchestrationContext}
+${inputContext}${rollContext}${orchestrationContext}${contextBlock}
 ${contextPrompts[node.id] ? `\nUser direction: ${contextPrompts[node.id]}` : ""}
 
 Respond with ONLY the JSON object.`;
@@ -1495,10 +1842,218 @@ Respond with ONLY the JSON object.`;
     return { system, user: userPrompt };
   };
 
-  const generateNode = async (nodeId, orchestrationPlan = null) => {
+  const generateOrchestratorGraph = async (nodeId) => {
     if (!ensureApiKeyConfigured()) return;
     const node = nodes.find((n) => n.id === nodeId);
+    if (!node || node.type !== "ai_orchestrator") return;
+    const connectedContexts = connections
+      .filter((c) => c.target === nodeId)
+      .map((c) => nodes.find((n) => n.id === c.source))
+      .filter((n) => n?.type === "context");
+    const brief = contextPrompts[nodeId]?.trim();
+    if (!brief) {
+      setError("AI Orchestrator requires a generation brief.");
+      return;
+    }
+
+    setGenerating(true);
+    setGeneratingNodeId(nodeId);
+    setError(null);
+    try {
+      const allowedContentTypes = Object.values(entityTypes)
+        .filter((t) => t.nodeClass === "content")
+        .map((t) => ({ id: t.id, name: t.name, description: t.description }));
+      const contextMarkdown = connectedContexts
+        .map((c) => c.result?.markdown)
+        .filter((md) => md && md.trim())
+        .join("\n\n---\n\n");
+      const contextBlock = contextMarkdown
+        ? `\n\nCampaign context:\n${contextMarkdown}\n\nUse this to inform node generation.`
+        : "";
+      const { provider, data } = await callLlm({
+        system: `Design a D&D sub-graph for Entity Forge.
+Respond with ONLY JSON:
+{
+  "summary": "string",
+  "nodes": [{ "temp_id": "n1", "type": "entity_type_id", "prompt": "generation prompt" }],
+  "connections": [{ "from": "temp_id", "to": "temp_id" }]
+}
+Rules:
+- Use only allowed content node type ids.
+- Create 3-8 nodes.
+- Connections must be acyclic and logical.
+- Favor dungeon+creature+encounter+trap bundles when appropriate.`,
+        user: `Brief: ${brief}${contextBlock}
+Allowed node types: ${JSON.stringify(allowedContentTypes, null, 2)}`,
+        maxTokens: 2500,
+      });
+      const plan = parseJsonWithExcerpt(extractLlmText(data, provider));
+      const planNodes = Array.isArray(plan?.nodes) ? plan.nodes : [];
+      const planConns = Array.isArray(plan?.connections) ? plan.connections : [];
+      const validPlanNodes = planNodes.filter((n) => entityTypes[n?.type]?.nodeClass === "content");
+      if (validPlanNodes.length === 0) throw new Error("Orchestrator returned no valid content nodes");
+
+      const tempToReal = {};
+      const createdNodes = validPlanNodes.map((pn, idx) => {
+        const id = genId();
+        tempToReal[pn.temp_id] = id;
+        return {
+          id,
+          type: pn.type,
+          x: node.x + 260 + (idx % 3) * 230 + Math.random() * 30,
+          y: node.y + Math.floor(idx / 3) * 150 + Math.random() * 20,
+          result: null,
+        };
+      });
+      const createdConnections = [];
+      planConns.forEach((pc) => {
+        const from = tempToReal[pc?.from];
+        const to = tempToReal[pc?.to];
+        if (!from || !to || from === to) return;
+        const src = createdNodes.find((n) => n.id === from);
+        const tgt = createdNodes.find((n) => n.id === to);
+        if (!src || !tgt) return;
+        if (!canConnect(src.type, tgt.type, entityTypes)) return;
+        createdConnections.push({ id: genId(), source: from, target: to });
+      });
+
+      // Orchestrator controls created nodes and propagates any connected context.
+      createdNodes.forEach((n) => {
+        createdConnections.push({ id: genId(), source: nodeId, target: n.id });
+        connectedContexts.forEach((ctx) => {
+          createdConnections.push({ id: genId(), source: ctx.id, target: n.id });
+        });
+      });
+
+      const newPrompts = {};
+      validPlanNodes.forEach((pn) => {
+        const realId = tempToReal[pn.temp_id];
+        if (realId) newPrompts[realId] = pn.prompt || "";
+      });
+
+      setNodes((prev) => [...prev, ...createdNodes]);
+      setConnections((prev) => {
+        const existing = new Set(prev.map((c) => `${c.source}->${c.target}`));
+        const deduped = createdConnections.filter((c) => {
+          const key = `${c.source}->${c.target}`;
+          if (existing.has(key)) return false;
+          existing.add(key);
+          return true;
+        });
+        return [...prev, ...deduped];
+      });
+      setContextPrompts((prev) => ({ ...prev, ...newPrompts }));
+      setNodeResult(nodeId, {
+        summary: plan.summary || `Generated ${createdNodes.length} nodes`,
+        generated_node_ids: createdNodes.map((n) => n.id),
+      });
+    } catch (err) {
+      setError(`Graph orchestration failed: ${normalizeLlmError(err)}`);
+    } finally {
+      setGenerating(false);
+      setGeneratingNodeId(null);
+    }
+  };
+
+  const expandTableNode = async (nodeId) => {
+    if (!ensureApiKeyConfigured()) return;
+    const node = nodes.find((n) => n.id === nodeId);
+    if (!node || node.type !== "table_expander") return;
+    const incoming = connections.filter((c) => c.target === nodeId).map((c) => nodes.find((n) => n.id === c.source)).filter(Boolean);
+    const tableNode = incoming.find((n) => n.type === "roll_table" && n.result?.entries?.length);
+    if (!tableNode) {
+      setError("Table Expander needs an incoming roll table with entries.");
+      return;
+    }
+    const contextNodes = incoming.filter((n) => n.type === "context");
+    const entries = tableNode.result.entries.slice(0, 20);
+    setGenerating(true);
+    setGeneratingNodeId(nodeId);
+    setError(null);
+    try {
+      const availableTypes = Object.values(entityTypes)
+        .filter((t) => t.nodeClass === "content")
+        .map((t) => ({ id: t.id, name: t.name, description: t.description }));
+      const { provider, data } = await callLlm({
+        system: `Map roll-table entries to the best Entity Forge node types.
+Respond with ONLY JSON:
+{
+  "mappings": [
+    { "entry_index": 0, "type": "entity_type_id", "prompt": "generation prompt using entry text" }
+  ]
+}
+Use only allowed type ids.`,
+        user: `Table: ${tableNode.result.name}
+Entries: ${JSON.stringify(entries, null, 2)}
+Allowed types: ${JSON.stringify(availableTypes, null, 2)}`,
+        maxTokens: 2200,
+      });
+      const mapping = parseJsonWithExcerpt(extractLlmText(data, provider));
+      const mappings = Array.isArray(mapping?.mappings) ? mapping.mappings : [];
+      const valid = mappings.filter((m) => Number.isInteger(m?.entry_index) && entries[m.entry_index] && entityTypes[m.type]?.nodeClass === "content");
+      if (valid.length === 0) throw new Error("Expander returned no valid mappings");
+
+      const createdNodes = valid.map((m, idx) => ({
+        id: genId(),
+        type: m.type,
+        x: node.x + 250 + (idx % 3) * 230 + Math.random() * 30,
+        y: node.y + Math.floor(idx / 3) * 140 + Math.random() * 20,
+        result: null,
+      }));
+      const newPrompts = {};
+      valid.forEach((m, idx) => {
+        const nid = createdNodes[idx].id;
+        const fallback = `Based on table entry: ${entries[m.entry_index].result}`;
+        newPrompts[nid] = m.prompt || fallback;
+      });
+      const createdConnections = [];
+      createdNodes.forEach((cn) => {
+        createdConnections.push({ id: genId(), source: tableNode.id, target: cn.id });
+        createdConnections.push({ id: genId(), source: nodeId, target: cn.id });
+        contextNodes.forEach((ctx) => createdConnections.push({ id: genId(), source: ctx.id, target: cn.id }));
+      });
+
+      setNodes((prev) => [...prev, ...createdNodes]);
+      setConnections((prev) => {
+        const existing = new Set(prev.map((c) => `${c.source}->${c.target}`));
+        const deduped = createdConnections.filter((c) => {
+          const key = `${c.source}->${c.target}`;
+          if (existing.has(key)) return false;
+          existing.add(key);
+          return true;
+        });
+        return [...prev, ...deduped];
+      });
+      setContextPrompts((prev) => ({ ...prev, ...newPrompts }));
+      setNodeResult(nodeId, {
+        expanded_from_table: tableNode.result.name,
+        created_count: createdNodes.length,
+        created_node_ids: createdNodes.map((n) => n.id),
+      });
+    } catch (err) {
+      setError(`Table expansion failed: ${normalizeLlmError(err)}`);
+    } finally {
+      setGenerating(false);
+      setGeneratingNodeId(null);
+    }
+  };
+
+  const generateNode = async (nodeId, orchestrationPlan = null) => {
+    const node = nodes.find((n) => n.id === nodeId);
     if (!node) return;
+    if (node.type === "context") {
+      setNodeResult(nodeId, node.result || { theme: "", tone: "", setting: "", power_level: "", restrictions: [] });
+      return;
+    }
+    if (node.type === "ai_orchestrator") {
+      await generateOrchestratorGraph(nodeId);
+      return;
+    }
+    if (node.type === "table_expander") {
+      await expandTableNode(nodeId);
+      return;
+    }
+    if (!ensureApiKeyConfigured()) return;
 
     // Roll tables don't use LLM — they store their table definition directly
     if (node.type === "roll_table") {
@@ -1591,7 +2146,8 @@ Respond with ONLY the JSON object.`;
     const order = topologicalSort(nodes, connections);
     for (const nodeId of order) {
       const node = nodes.find((n) => n.id === nodeId);
-      if (node?.type === "roll_table") continue; // already handled
+      if (!node) continue;
+      if (node.type === "roll_table" || CONTROL_NODE_TYPES.has(node.type)) continue;
       await generateNode(nodeId, orchMode === "orchestrated" ? activeOrchPlan : null);
     }
     setOrchPlan(null);
@@ -1725,7 +2281,7 @@ ${JSON.stringify(ASSET_SHEET_SCHEMAS, null, 2)}`;
 
   const saveEntity = async (nodeId) => {
     const node = nodes.find((n) => n.id === nodeId);
-    if (!node?.result) return;
+    if (!node?.result || CONTROL_NODE_TYPES.has(node.type)) return;
     const entity = { id: genId(), type: node.type, data: node.result, savedAt: new Date().toISOString(), folderIds: [] };
     const updated = [...savedEntities, entity];
     await persistEntities(updated);
@@ -1764,6 +2320,7 @@ ${JSON.stringify(ASSET_SHEET_SCHEMAS, null, 2)}`;
 
   const selectedNodeData = nodes.find((n) => n.id === selectedNode);
   const selectedEntityType = selectedNodeData ? entityTypes[selectedNodeData.type] : null;
+  const isSelectedControlNode = !!selectedNodeData && CONTROL_NODE_TYPES.has(selectedNodeData.type);
   const inputsForSelected = selectedNodeData
     ? connections.filter((c) => c.target === selectedNode).map((c) => nodes.find((n) => n.id === c.source)).filter(Boolean)
     : [];
@@ -2228,6 +2785,14 @@ ${JSON.stringify(ASSET_SHEET_SCHEMAS, null, 2)}`;
                   </div>
                   {hasResult && node.result.name && <div style={{ fontSize: 8, color: "#6a6a7a" }}>{et.name}{et.isCustom ? " (custom)" : ""}</div>}
                 </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); generateNode(node.id); }}
+                  disabled={generating}
+                  title="Execute Node"
+                  style={{ fontSize: 9, color: generatingNodeId === node.id ? "#D4A843" : et.accent, cursor: generating ? "not-allowed" : "pointer", padding: "2px 4px", borderRadius: 3, border: "1px solid #2a2a3a", background: "#0f1020" }}
+                >
+                  ▶
+                </button>
                 <div onClick={(e) => { e.stopPropagation(); deleteNode(node.id); }} style={{ fontSize: 9, color: "#4a4a5a", cursor: "pointer", padding: "2px 3px" }}>✕</div>
               </div>
               {/* Status */}
@@ -2327,15 +2892,34 @@ ${JSON.stringify(ASSET_SHEET_SCHEMAS, null, 2)}`;
               </div>
             )}
 
-            {/* Context prompt */}
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: 1.5, color: "#444", marginBottom: 4, fontWeight: 600 }}>
-                {selectedNodeData.type === "roll_table" ? "Table Generation Prompt" : "Generation Prompt"}
+            {selectedNodeData.type === "context" ? (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: 1.5, color: "#444", marginBottom: 4, fontWeight: 600 }}>Campaign Context (Markdown)</div>
+                <textarea
+                  value={selectedNodeData.result?.markdown || ""}
+                  placeholder="Paste campaign notes, world details, NPCs, locations, plot hooks...&#10;&#10;The AI Orchestrator will parse this to generate nodes."
+                  onChange={(e) => setNodes((prev) => prev.map((n) => n.id === selectedNode ? { ...n, result: { markdown: e.target.value } } : n))}
+                  style={{ width: "100%", minHeight: 200, background: "#0D0D12", border: "1px solid #2a2a3a", borderRadius: 6, padding: 8, color: "#D4CFC4", fontSize: 11, fontFamily: "'Fira Code', monospace", resize: "vertical", lineHeight: 1.6 }}
+                />
               </div>
-              <textarea value={contextPrompts[selectedNode] || ""} onChange={(e) => setContextPrompts({ ...contextPrompts, [selectedNode]: e.target.value })}
-                placeholder={selectedNodeData.type === "roll_table" ? 'e.g. "Random encounters for a haunted forest, d12"' : 'e.g. "A fire genasi blacksmith with a dark secret"'}
-                style={{ width: "100%", minHeight: 55, background: "#0D0D12", border: "1px solid #2a2a3a", borderRadius: 6, padding: 8, color: "#D4CFC4", fontSize: 11, fontFamily: "'Source Sans 3'", resize: "vertical", lineHeight: 1.4 }} />
-            </div>
+            ) : (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: 1.5, color: "#444", marginBottom: 4, fontWeight: 600 }}>
+                  {selectedNodeData.type === "roll_table" ? "Table Generation Prompt" : selectedNodeData.type === "ai_orchestrator" ? "Graph Brief" : selectedNodeData.type === "table_expander" ? "Expansion Strategy Prompt" : "Generation Prompt"}
+                </div>
+                <textarea value={contextPrompts[selectedNode] || ""} onChange={(e) => setContextPrompts({ ...contextPrompts, [selectedNode]: e.target.value })}
+                  placeholder={
+                    selectedNodeData.type === "roll_table"
+                      ? 'e.g. "Random encounters for a haunted forest, d12"'
+                      : selectedNodeData.type === "ai_orchestrator"
+                        ? 'e.g. "A dungeon crawl for level 5 with undead cultists"'
+                        : selectedNodeData.type === "table_expander"
+                          ? 'e.g. "Prefer social NPCs and quest hooks over combat"'
+                          : 'e.g. "A fire genasi blacksmith with a dark secret"'
+                  }
+                  style={{ width: "100%", minHeight: 55, background: "#0D0D12", border: "1px solid #2a2a3a", borderRadius: 6, padding: 8, color: "#D4CFC4", fontSize: 11, fontFamily: "'Source Sans 3'", resize: "vertical", lineHeight: 1.4 }} />
+              </div>
+            )}
 
             {/* Connected inputs */}
             {inputsForSelected.length > 0 && (
@@ -2373,7 +2957,15 @@ ${JSON.stringify(ASSET_SHEET_SCHEMAS, null, 2)}`;
             {/* Generate */}
             <button onClick={() => generateNode(selectedNode)} disabled={generating}
               style={{ width: "100%", padding: "8px 0", background: generating ? "#333" : `linear-gradient(135deg, ${selectedEntityType.color}, ${selectedEntityType.accent})`, border: "none", borderRadius: 7, color: generating ? "#666" : "#0D0D12", fontWeight: 700, fontSize: 11, cursor: generating ? "not-allowed" : "pointer", fontFamily: "'Cinzel', serif", marginBottom: 12 }}>
-              {generatingNodeId === selectedNode ? "⏳ Forging..." : selectedNodeData.result ? "🔄 Re-forge" : `⚡ Forge ${selectedEntityType.name}`}
+              {generatingNodeId === selectedNode
+                ? "⏳ Running..."
+                : selectedNodeData.type === "ai_orchestrator"
+                  ? "🧠 Generate Graph"
+                  : selectedNodeData.type === "table_expander"
+                    ? "🌳 Expand Table"
+                    : selectedNodeData.result
+                      ? "🔄 Re-forge"
+                      : `⚡ Forge ${selectedEntityType.name}`}
             </button>
 
             {/* Result */}
@@ -2381,10 +2973,12 @@ ${JSON.stringify(ASSET_SHEET_SCHEMAS, null, 2)}`;
               <div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                   <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: 1.5, color: "#444", fontWeight: 600 }}>Result</div>
-                  <button onClick={() => saveEntity(selectedNode)}
-                    style={{ background: "#D4A84320", border: "1px solid #D4A84340", borderRadius: 3, padding: "2px 8px", color: "#D4A843", fontSize: 9, cursor: "pointer", fontWeight: 600 }}>
-                    💾 Save
-                  </button>
+                  {!isSelectedControlNode && (
+                    <button onClick={() => saveEntity(selectedNode)}
+                      style={{ background: "#D4A84320", border: "1px solid #D4A84340", borderRadius: 3, padding: "2px 8px", color: "#D4A843", fontSize: 9, cursor: "pointer", fontWeight: 600 }}>
+                      💾 Save
+                    </button>
+                  )}
                 </div>
                 <div style={{ background: "#0D0D12", border: "1px solid #2a2a3a", borderRadius: 6, padding: 10 }}>
                   {Object.entries(selectedNodeData.result).map(([key, value]) => (
@@ -2462,7 +3056,7 @@ ${JSON.stringify(ASSET_SHEET_SCHEMAS, null, 2)}`;
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 10, color: "#6a6a7a", display: "block", marginBottom: 3 }}>Accepts Inputs From</label>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                {Object.values(CORE_ENTITY_TYPES).filter((t) => t.id !== "roll_table").map((t) => {
+                {Object.values(CORE_ENTITY_TYPES).filter((t) => t.nodeClass === "content").map((t) => {
                   const isActive = customDraft.acceptsInputs.includes(t.id);
                   return (
                     <span key={t.id} onClick={() => setCustomDraft({ ...customDraft, acceptsInputs: isActive ? customDraft.acceptsInputs.filter((x) => x !== t.id) : [...customDraft.acceptsInputs, t.id] })}
