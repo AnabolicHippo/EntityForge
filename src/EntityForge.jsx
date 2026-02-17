@@ -1885,7 +1885,7 @@ Rules:
 - Favor dungeon+creature+encounter+trap bundles when appropriate.`,
         user: `Brief: ${brief}${contextBlock}
 Allowed node types: ${JSON.stringify(allowedContentTypes, null, 2)}`,
-        maxTokens: 2500,
+        maxTokens: 8000,
       });
       const plan = parseJsonWithExcerpt(extractLlmText(data, provider));
       const planNodes = Array.isArray(plan?.nodes) ? plan.nodes : [];
@@ -1986,7 +1986,7 @@ Use only allowed type ids.`,
         user: `Table: ${tableNode.result.name}
 Entries: ${JSON.stringify(entries, null, 2)}
 Allowed types: ${JSON.stringify(availableTypes, null, 2)}`,
-        maxTokens: 2200,
+        maxTokens: 8000,
       });
       const mapping = parseJsonWithExcerpt(extractLlmText(data, provider));
       const mappings = Array.isArray(mapping?.mappings) ? mapping.mappings : [];
@@ -2065,7 +2065,7 @@ Allowed types: ${JSON.stringify(availableTypes, null, 2)}`,
           const { provider, data } = await callLlm({
             system: "Generate a D&D 5e roll table as JSON. Include: name, dice (e.g. d20), entries (array of {range_min, range_max, result}), tags, source. Respond with ONLY valid JSON.",
             user: `Create a roll table for: ${prompt}\n\nRespond with ONLY JSON.`,
-            maxTokens: 2000,
+            maxTokens: 8000,
           });
           const text = extractLlmText(data, provider);
           const parsed = parseJsonWithExcerpt(text);
@@ -2096,7 +2096,7 @@ Allowed types: ${JSON.stringify(availableTypes, null, 2)}`,
     setGenerating(true); setGeneratingNodeId(nodeId); setError(null);
 
     try {
-      const { provider, data } = await callLlm({ system, user, maxTokens: 4000 });
+      const { provider, data } = await callLlm({ system, user, maxTokens: 16000 });
       const text = extractLlmText(data, provider);
       const parsed = parseJsonWithExcerpt(text);
       setNodes((p) => p.map((n) => n.id === nodeId ? { ...n, result: parsed } : n));
@@ -2132,7 +2132,7 @@ Allowed types: ${JSON.stringify(availableTypes, null, 2)}`,
         const { provider, data } = await callLlm({
           system: "You are the Entity Forge Orchestrator. Analyze the D&D content generation graph and produce a coherent generation plan. Respond with ONLY JSON: { theme: string, tone: string, narrative_threads: string[], node_directives: { [node_description]: string }[], mechanical_notes: string }",
           user: `Plan generation for this graph:\n${graphDesc}\n\nRoll table results: ${JSON.stringify(Object.values(rollResults).map((r) => `${r.table}: ${r.entry.result}`))}\n\nProduce a cohesive generation plan as JSON.`,
-          maxTokens: 2000,
+          maxTokens: 8000,
         });
         const text = extractLlmText(data, provider);
         const plan = parseJsonWithExcerpt(text);
