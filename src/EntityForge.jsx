@@ -347,6 +347,10 @@ export default function EntityForge() {
   const [generatingNodeId, setGeneratingNodeId] = useState(null);
   const [showSchema, setShowSchema] = useState(null);
   const [savedEntities, setSavedEntities] = useState([]);
+  const [folders, setFolders] = useState([]);
+  const [folderFilter, setFolderFilter] = useState("all");
+  const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderColor, setNewFolderColor] = useState("#D4A843");
   const [panel, setPanel] = useState("palette");
   const [paletteTab, setPaletteTab] = useState("entities");
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
@@ -360,6 +364,10 @@ export default function EntityForge() {
   const [lockedRolls, setLockedRolls] = useState({});
   const [showCustomBuilder, setShowCustomBuilder] = useState(false);
   const [customDraft, setCustomDraft] = useState({ name: "", icon: "⚙️", color: "#888888", accent: "#AAAAAA", description: "", acceptsInputs: [], schemaText: "" });
+  const [showCustomAi, setShowCustomAi] = useState(false);
+  const [customAiChat, setCustomAiChat] = useState([]);
+  const [customAiInput, setCustomAiInput] = useState("");
+  const [customAiGenerating, setCustomAiGenerating] = useState(false);
   const [ruleset, setRuleset] = useState("dnd5e-srd");
   const [orchChat, setOrchChat] = useState([]);
   const [orchInput, setOrchInput] = useState("");
@@ -374,7 +382,25 @@ export default function EntityForge() {
   // Load saved state
   useEffect(() => {
     (async () => {
-      try { const r = await window.storage.get("ef2-entities"); if (r?.value) setSavedEntities(JSON.parse(r.value)); } catch {}
+      try {
+        const r = await window.storage.get("ef2-entities");
+        if (r?.value) {
+          const parsed = JSON.parse(r.value);
+          const normalized = Array.isArray(parsed)
+            ? parsed.map((ent) => ({ ...ent, folderIds: Array.isArray(ent.folderIds) ? ent.folderIds : [] }))
+            : [];
+          setSavedEntities(normalized);
+        }
+      } catch {}
+      try {
+        const r = await window.storage.get("ef2-folders");
+        if (r?.value) {
+          const parsed = JSON.parse(r.value);
+          if (Array.isArray(parsed)) {
+            setFolders(parsed.filter((f) => f?.id && f?.name).map((f) => ({ id: String(f.id), name: String(f.name), color: f.color || "#D4A843" })));
+          }
+        }
+      } catch {}
       try {
         const r = await window.storage.get("ef2-workflow");
         if (r?.value) {
@@ -420,6 +446,10 @@ export default function EntityForge() {
 
   // ── Node operations ──
   const addNode = (typeId) => {
+    if (!entityTypes[typeId]) {
+      setError(`Unknown node type: ${typeId}`);
+      return;
+    }
     const cx = 300 + Math.random() * 200 - canvasOffset.x;
     const cy = 200 + Math.random() * 200 - canvasOffset.y;
     const node = { id: genId(), type: typeId, x: cx, y: cy, result: null };
@@ -818,6 +848,13 @@ Respond with ONLY the JSON object.`;
   };
 
   // ── Custom Node Builder ──
+  const closeCustomBuilder = () => {
+    setShowCustomBuilder(false);
+    setShowCustomAi(false);
+    setCustomAiChat([]);
+    setCustomAiInput("");
+  };
+
   const saveCustomNode = async () => {
     const id = customDraft.name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
     if (!id || !customDraft.name) return;
@@ -836,8 +873,41 @@ Respond with ONLY the JSON object.`;
     const customs = {};
     Object.entries(updated).forEach(([k, v]) => { if (v.isCustom) customs[k] = v; });
     try { await window.storage.set("ef2-custom-nodes", JSON.stringify(customs)); } catch {}
-    setShowCustomBuilder(false);
+    closeCustomBuilder();
     setCustomDraft({ name: "", icon: "⚙️", color: "#888888", accent: "#AAAAAA", description: "", acceptsInputs: [], schemaText: "" });
+  };
+
+  const generateCustomSchemaWithAi = async () => {
+    if (!ensureApiKeyConfigured()) return;
+    if (!customAiInput.trim()) return;
+    const userMsg = customAiInput.trim();
+    const nextHistory = [...customAiChat, { role: "user", content: userMsg }].slice(-10);
+    setCustomAiChat(nextHistory);
+    setCustomAiInput("");
+    setCustomAiGenerating(true);
+    setError(null);
+    try {
+      const system = 'Generate a JSON schema for a custom Entity Forge node. Output ONLY the schema object matching this format: { properties: { fieldName: { type: "string"|"number"|"boolean"|"array", description: "...", enum?: [...] } } }';
+      const { provider, data } = await callLlm({
+        system,
+        user: userMsg,
+        messages: apiProvider === "openai" ? [{ role: "system", content: system }, ...nextHistory] : nextHistory,
+        maxTokens: 1600,
+      });
+      const text = extractLlmText(data, provider);
+      const parsed = parseJsonWithExcerpt(text);
+      if (!parsed || typeof parsed !== "object" || !parsed.properties || typeof parsed.properties !== "object") {
+        throw new Error("Schema must include a properties object");
+      }
+      setCustomDraft((prev) => ({ ...prev, schemaText: JSON.stringify(parsed, null, 2) }));
+      setCustomAiChat((p) => [...p, { role: "assistant", content: "Schema generated and applied to the JSON field." }]);
+    } catch (err) {
+      const msg = normalizeLlmError(err);
+      setError(`Custom schema generation failed: ${msg}`);
+      setCustomAiChat((p) => [...p, { role: "assistant", content: `Error: ${msg}` }]);
+    } finally {
+      setCustomAiGenerating(false);
+    }
   };
 
   // ── Orchestrator Chat ──
@@ -870,19 +940,47 @@ Respond with ONLY the JSON object.`;
   };
 
   // ── Persistence ──
+  const persistEntities = async (nextEntities) => {
+    setSavedEntities(nextEntities);
+    try { await window.storage.set("ef2-entities", JSON.stringify(nextEntities)); } catch {}
+  };
+
+  const persistFolders = async (nextFolders) => {
+    setFolders(nextFolders);
+    try { await window.storage.set("ef2-folders", JSON.stringify(nextFolders)); } catch {}
+  };
+
+  const createFolder = async () => {
+    const name = newFolderName.trim();
+    if (!name) return;
+    const next = [...folders, { id: genId(), name, color: newFolderColor || "#D4A843" }];
+    await persistFolders(next);
+    setNewFolderName("");
+  };
+
+  const toggleEntityFolder = async (entityId, folderId) => {
+    const next = savedEntities.map((ent) => {
+      if (ent.id !== entityId) return ent;
+      const current = Array.isArray(ent.folderIds) ? ent.folderIds : [];
+      const folderIds = current.includes(folderId)
+        ? current.filter((id) => id !== folderId)
+        : [...current, folderId];
+      return { ...ent, folderIds };
+    });
+    await persistEntities(next);
+  };
+
   const saveEntity = async (nodeId) => {
     const node = nodes.find((n) => n.id === nodeId);
     if (!node?.result) return;
-    const entity = { id: genId(), type: node.type, data: node.result, savedAt: new Date().toISOString() };
+    const entity = { id: genId(), type: node.type, data: node.result, savedAt: new Date().toISOString(), folderIds: [] };
     const updated = [...savedEntities, entity];
-    setSavedEntities(updated);
-    try { await window.storage.set("ef2-entities", JSON.stringify(updated)); } catch {}
+    await persistEntities(updated);
   };
 
   const deleteEntity = async (entityId) => {
     const updated = savedEntities.filter((e) => e.id !== entityId);
-    setSavedEntities(updated);
-    try { await window.storage.set("ef2-entities", JSON.stringify(updated)); } catch {}
+    await persistEntities(updated);
   };
 
   const clearCanvas = () => { setNodes([]); setConnections([]); setSelectedNode(null); setContextPrompts({}); setRollResults({}); setLockedRolls({}); };
@@ -897,9 +995,18 @@ Respond with ONLY the JSON object.`;
     ? connections.filter((c) => c.target === selectedNode).map((c) => nodes.find((n) => n.id === c.source)).filter(Boolean)
     : [];
 
-  const coreTypes = Object.values(entityTypes).filter((t) => !t.isCustom && t.id !== "roll_table");
+  const coreTypes = Object.values(CORE_ENTITY_TYPES)
+    .filter((t) => t.id !== "roll_table")
+    .map((t) => entityTypes[t.id])
+    .filter(Boolean);
+  const missingCoreTypes = Object.values(CORE_ENTITY_TYPES)
+    .filter((t) => t.id !== "roll_table" && !entityTypes[t.id])
+    .map((t) => t.name);
   const customTypes = Object.values(entityTypes).filter((t) => t.isCustom);
   const rollTableType = entityTypes.roll_table;
+  const filteredSavedEntities = folderFilter === "all"
+    ? savedEntities
+    : savedEntities.filter((ent) => (ent.folderIds || []).includes(folderFilter));
   const modelOptions = apiProvider === "openai" ? OPENAI_MODELS : ANTHROPIC_MODELS;
 
   // ═══════════════════════════════════════════════════════════
@@ -1024,6 +1131,14 @@ Respond with ONLY the JSON object.`;
               {paletteTab === "entities" && (
                 <>
                   <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: 1.5, color: "#444", marginBottom: 6, fontWeight: 600 }}>SRD Entity Types</div>
+                  {missingCoreTypes.length > 0 && (
+                    <div style={{ marginBottom: 8, fontSize: 10, color: "#E8785F", background: "#2a1a1a", border: "1px solid #5a2f2f", borderRadius: 6, padding: "6px 8px" }}>
+                      Missing core types: {missingCoreTypes.join(", ")}
+                    </div>
+                  )}
+                  {coreTypes.length === 0 && (
+                    <div style={{ fontSize: 11, color: "#4a4a5a", padding: 8 }}>No SRD entity types available.</div>
+                  )}
                   {coreTypes.map((et) => (
                     <div key={et.id} className="entity-btn" onClick={() => addNode(et.id)}
                       style={{ background: "#16162250", borderRadius: 7, padding: "8px 10px", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
@@ -1035,7 +1150,7 @@ Respond with ONLY the JSON object.`;
                         </div>
                       </div>
                       <div onClick={(e) => { e.stopPropagation(); setShowSchema(showSchema === et.id ? null : et.id); }}
-                        style={{ fontSize: 10, color: "#555", cursor: "pointer", padding: "2px 5px", borderRadius: 3, background: "#1a1a24" }}>{ }</div>
+                        style={{ fontSize: 10, color: "#555", cursor: "pointer", padding: "2px 5px", borderRadius: 3, background: "#1a1a24" }}>{"{}"}</div>
                     </div>
                   ))}
                   {showSchema && entityTypes[showSchema] && (
@@ -1105,10 +1220,54 @@ Respond with ONLY the JSON object.`;
           {/* ── VAULT ── */}
           {panel === "saved" && (
             <div>
-              <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: 1.5, color: "#444", marginBottom: 6, fontWeight: 600 }}>Saved Entities ({savedEntities.length})</div>
+              <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: 1.5, color: "#444", marginBottom: 6, fontWeight: 600 }}>
+                Saved Entities ({filteredSavedEntities.length}/{savedEntities.length})
+              </div>
+
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 10, color: "#6a6a7a", marginBottom: 4 }}>Filter by folder</div>
+                <select value={folderFilter} onChange={(e) => setFolderFilter(e.target.value)}
+                  style={{ width: "100%", background: "#0D0D12", border: "1px solid #2a2a3a", borderRadius: 6, padding: "6px 8px", color: "#D4CFC4", fontSize: 11 }}>
+                  <option value="all">All folders</option>
+                  {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 10, background: "#16162250", border: "1px solid #2a2a3a", borderRadius: 7, padding: 8 }}>
+                <div style={{ fontSize: 10, color: "#6a6a7a", marginBottom: 6 }}>Create folder/tag</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && createFolder()}
+                    placeholder="e.g. Arc 1"
+                    style={{ flex: 1, background: "#0D0D12", border: "1px solid #2a2a3a", borderRadius: 5, padding: "5px 7px", color: "#D4CFC4", fontSize: 11 }} />
+                  <input type="color" value={newFolderColor} onChange={(e) => setNewFolderColor(e.target.value)}
+                    style={{ width: 36, height: 30, border: "1px solid #2a2a3a", borderRadius: 5, background: "none", cursor: "pointer" }} />
+                  <button onClick={createFolder}
+                    style={{ padding: "0 10px", background: "#D4A84320", border: "1px solid #D4A84340", borderRadius: 5, color: "#D4A843", fontSize: 11, cursor: "pointer" }}>
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {folders.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+                  {folders.map((folder) => (
+                    <span key={folder.id}
+                      onClick={() => setFolderFilter(folder.id)}
+                      style={{ padding: "2px 7px", borderRadius: 999, border: `1px solid ${folder.color}55`, background: folderFilter === folder.id ? `${folder.color}2A` : "#1a1a24", color: folder.color, fontSize: 10, cursor: "pointer" }}>
+                      {folder.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+
               {savedEntities.length === 0 && <div style={{ fontSize: 11, color: "#4a4a5a", padding: 8 }}>Generate and save entities to your vault.</div>}
-              {savedEntities.map((ent) => {
+              {savedEntities.length > 0 && filteredSavedEntities.length === 0 && (
+                <div style={{ fontSize: 11, color: "#4a4a5a", padding: 8 }}>No entities found for this folder.</div>
+              )}
+
+              {filteredSavedEntities.map((ent) => {
                 const et = entityTypes[ent.type];
+                const assignedFolders = folders.filter((folder) => (ent.folderIds || []).includes(folder.id));
                 return (
                   <div key={ent.id} className="entity-btn" style={{ background: "#16162250", borderRadius: 7, padding: "8px 10px", marginBottom: 4 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
@@ -1116,9 +1275,33 @@ Respond with ONLY the JSON object.`;
                       <span style={{ fontSize: 11, fontWeight: 600, color: et?.accent }}>{ent.data?.name || et?.name}</span>
                       <span onClick={() => deleteEntity(ent.id)} style={{ marginLeft: "auto", fontSize: 9, color: "#C44536", cursor: "pointer" }}>✕</span>
                     </div>
+                    <div style={{ fontSize: 8, color: "#555", marginBottom: 4 }}>
+                      {ent.savedAt ? new Date(ent.savedAt).toLocaleString() : "Unknown save date"}
+                    </div>
                     <div style={{ fontSize: 9, color: "#555", fontFamily: "'Fira Code', monospace", maxHeight: 40, overflow: "hidden" }}>
                       {JSON.stringify(ent.data).substring(0, 100)}...
                     </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                      {assignedFolders.map((folder) => (
+                        <span key={folder.id}
+                          style={{ padding: "1px 6px", borderRadius: 999, border: `1px solid ${folder.color}55`, color: folder.color, fontSize: 9 }}>
+                          {folder.name}
+                        </span>
+                      ))}
+                    </div>
+                    {folders.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                        {folders.map((folder) => {
+                          const active = (ent.folderIds || []).includes(folder.id);
+                          return (
+                            <span key={folder.id} onClick={() => toggleEntityFolder(ent.id, folder.id)}
+                              style={{ padding: "1px 6px", borderRadius: 4, fontSize: 9, cursor: "pointer", background: active ? `${folder.color}22` : "#1a1a24", border: `1px solid ${active ? folder.color : "#2a2a3a"}`, color: active ? folder.color : "#6a6a7a" }}>
+                              {active ? "✓ " : "+ "}{folder.name}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1452,7 +1635,7 @@ Respond with ONLY the JSON object.`;
       {/* ═══ CUSTOM NODE BUILDER MODAL ═══ */}
       {showCustomBuilder && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowCustomBuilder(false); }}>
+          onClick={(e) => { if (e.target === e.currentTarget) closeCustomBuilder(); }}>
           <div className="fade-in" style={{ background: "#12121C", border: "1px solid #2a2a3a", borderRadius: 12, width: 480, maxHeight: "80vh", overflow: "auto", padding: 24 }}>
             <div style={{ fontFamily: "'Cinzel', serif", fontSize: 18, color: "#D4A843", marginBottom: 16 }}>⚙️ Custom Node Builder</div>
 
@@ -1505,14 +1688,47 @@ Respond with ONLY the JSON object.`;
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 10, color: "#6a6a7a", display: "block", marginBottom: 3 }}>Schema (JSON) *</label>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                <label style={{ fontSize: 10, color: "#6a6a7a", display: "block" }}>Schema (JSON) *</label>
+                <button onClick={() => setShowCustomAi((s) => !s)}
+                  style={{ background: showCustomAi ? "#D4A84320" : "transparent", border: `1px solid ${showCustomAi ? "#D4A84340" : "#2a2a3a"}`, borderRadius: 4, color: showCustomAi ? "#D4A843" : "#8a8a9a", fontSize: 10, padding: "3px 8px", cursor: "pointer" }}>
+                  Use AI ✨
+                </button>
+              </div>
+
+              {showCustomAi && (
+                <div style={{ marginBottom: 8, background: "#0D0D12", border: "1px solid #2a2a3a", borderRadius: 6, padding: 8 }}>
+                  <div style={{ fontSize: 10, color: "#6a6a7a", marginBottom: 6 }}>Describe the node schema you want and AI will generate the JSON.</div>
+                  <div style={{ maxHeight: 120, overflow: "auto", marginBottom: 6 }}>
+                    {customAiChat.length === 0 && (
+                      <div style={{ fontSize: 10, color: "#4a4a5a" }}>Try: "A weather system node with season, intensity, and effects."</div>
+                    )}
+                    {customAiChat.map((msg, i) => (
+                      <div key={i} style={{ marginBottom: 4, border: `1px solid ${msg.role === "user" ? "#2a2a4a" : "#3a3a2a"}`, background: msg.role === "user" ? "#141428" : "#1a1a24", borderRadius: 5, padding: "5px 6px" }}>
+                        <div style={{ fontSize: 9, color: msg.role === "user" ? "#6a6a8a" : "#D4A843", marginBottom: 2, fontWeight: 600 }}>{msg.role === "user" ? "You" : "AI"}</div>
+                        <div style={{ fontSize: 10, color: "#B0ACA0", whiteSpace: "pre-wrap" }}>{msg.content}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <input value={customAiInput} onChange={(e) => setCustomAiInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && generateCustomSchemaWithAi()}
+                      placeholder="Describe your custom node..."
+                      style={{ flex: 1, background: "#12121C", border: "1px solid #2a2a3a", borderRadius: 5, padding: "6px 7px", color: "#D4CFC4", fontSize: 11 }} />
+                    <button onClick={generateCustomSchemaWithAi} disabled={customAiGenerating}
+                      style={{ padding: "0 10px", background: customAiGenerating ? "#333" : "#D4A84320", border: `1px solid ${customAiGenerating ? "#333" : "#D4A84340"}`, borderRadius: 5, color: customAiGenerating ? "#666" : "#D4A843", fontSize: 11, cursor: customAiGenerating ? "not-allowed" : "pointer" }}>
+                      {customAiGenerating ? "..." : "Send"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <textarea value={customDraft.schemaText} onChange={(e) => setCustomDraft({ ...customDraft, schemaText: e.target.value })}
                 placeholder={`{\n  "name": "string",\n  "stages": "{ name, description, skill_checks }[]",\n  "reward": "string"\n}`}
                 style={{ width: "100%", minHeight: 120, background: "#0D0D12", border: "1px solid #2a2a3a", borderRadius: 5, padding: 8, color: "#D4CFC4", fontSize: 11, fontFamily: "'Fira Code', monospace", resize: "vertical", lineHeight: 1.4 }} />
             </div>
 
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setShowCustomBuilder(false)} style={{ padding: "8px 16px", background: "transparent", border: "1px solid #2a2a3a", borderRadius: 6, color: "#6a6a7a", fontSize: 12, cursor: "pointer" }}>Cancel</button>
+              <button onClick={closeCustomBuilder} style={{ padding: "8px 16px", background: "transparent", border: "1px solid #2a2a3a", borderRadius: 6, color: "#6a6a7a", fontSize: 12, cursor: "pointer" }}>Cancel</button>
               <button onClick={saveCustomNode} style={{ padding: "8px 16px", background: "linear-gradient(135deg, #D4A843, #B5651D)", border: "none", borderRadius: 6, color: "#0D0D12", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "'Cinzel', serif" }}>Create Node</button>
             </div>
           </div>
